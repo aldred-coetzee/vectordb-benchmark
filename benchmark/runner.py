@@ -80,7 +80,7 @@ class BenchmarkRunner:
         self.dataset = dataset
         self.monitor = monitor
         self.batch_size = 50000
-        self.warmup_queries = 100
+        self.warmup_queries = 10000
         self.k_values = [10, 100]
 
     def run_ingest_benchmark(

@@ -2,7 +2,7 @@
 
 import struct
 from pathlib import Path
-from typing import Tuple
+from typing import Iterator, Tuple
 
 import numpy as np
 
@@ -24,25 +24,30 @@ def read_fvecs(filename: str) -> np.ndarray:
     if not path.exists():
         raise FileNotFoundError(f"File not found: {filename}")
 
-    vectors = []
+    # Read dimension from first vector to calculate count
     with open(path, "rb") as f:
-        while True:
-            # Read dimension (4 bytes, int32)
-            dim_bytes = f.read(4)
-            if not dim_bytes:
-                break
+        dim = struct.unpack("i", f.read(4))[0]
 
-            dim = struct.unpack("i", dim_bytes)[0]
+    # Calculate number of vectors from file size
+    # Each vector: 4 bytes (dim) + dim * 4 bytes (data)
+    file_size = path.stat().st_size
+    vector_size = 4 + dim * 4
+    num_vectors = file_size // vector_size
 
-            # Read vector data (dim * 4 bytes, float32)
-            vec_bytes = f.read(dim * 4)
-            if len(vec_bytes) != dim * 4:
-                raise ValueError(f"Incomplete vector data at position {f.tell()}")
+    # Pre-allocate array for efficiency
+    vectors = np.empty((num_vectors, dim), dtype=np.float32)
 
-            vec = np.frombuffer(vec_bytes, dtype=np.float32)
-            vectors.append(vec)
+    with open(path, "rb") as f:
+        for i in range(num_vectors):
+            # Read and verify dimension
+            vec_dim = struct.unpack("i", f.read(4))[0]
+            if vec_dim != dim:
+                raise ValueError(f"Inconsistent dimension at vector {i}: expected {dim}, got {vec_dim}")
 
-    return np.array(vectors, dtype=np.float32)
+            # Read vector data directly into pre-allocated array
+            vectors[i] = np.frombuffer(f.read(dim * 4), dtype=np.float32)
+
+    return vectors
 
 
 def read_ivecs(filename: str) -> np.ndarray:
@@ -62,25 +67,30 @@ def read_ivecs(filename: str) -> np.ndarray:
     if not path.exists():
         raise FileNotFoundError(f"File not found: {filename}")
 
-    vectors = []
+    # Read dimension from first vector to calculate count
     with open(path, "rb") as f:
-        while True:
-            # Read dimension (4 bytes, int32)
-            dim_bytes = f.read(4)
-            if not dim_bytes:
-                break
+        dim = struct.unpack("i", f.read(4))[0]
 
-            dim = struct.unpack("i", dim_bytes)[0]
+    # Calculate number of vectors from file size
+    # Each vector: 4 bytes (dim) + dim * 4 bytes (data)
+    file_size = path.stat().st_size
+    vector_size = 4 + dim * 4
+    num_vectors = file_size // vector_size
 
-            # Read vector data (dim * 4 bytes, int32)
-            vec_bytes = f.read(dim * 4)
-            if len(vec_bytes) != dim * 4:
-                raise ValueError(f"Incomplete vector data at position {f.tell()}")
+    # Pre-allocate array for efficiency
+    vectors = np.empty((num_vectors, dim), dtype=np.int32)
 
-            vec = np.frombuffer(vec_bytes, dtype=np.int32)
-            vectors.append(vec)
+    with open(path, "rb") as f:
+        for i in range(num_vectors):
+            # Read and verify dimension
+            vec_dim = struct.unpack("i", f.read(4))[0]
+            if vec_dim != dim:
+                raise ValueError(f"Inconsistent dimension at vector {i}: expected {dim}, got {vec_dim}")
 
-    return np.array(vectors, dtype=np.int32)
+            # Read vector data directly into pre-allocated array
+            vectors[i] = np.frombuffer(f.read(dim * 4), dtype=np.int32)
+
+    return vectors
 
 
 class SIFTDataset:
@@ -158,7 +168,7 @@ class SIFTDataset:
 
     def get_batches(
         self, batch_size: int = 50000
-    ) -> Tuple[int, np.ndarray, np.ndarray]:
+    ) -> Iterator[Tuple[int, np.ndarray, np.ndarray]]:
         """
         Yield batches of base vectors with their IDs.
 

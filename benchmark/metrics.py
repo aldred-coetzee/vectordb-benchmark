@@ -32,18 +32,20 @@ def calculate_recall_at_k(
         )
 
     num_queries = len(retrieved_ids)
-    total_recall = 0.0
 
-    for i in range(num_queries):
-        # Get top-k from both retrieved and ground truth
-        retrieved_k = set(retrieved_ids[i][:k])
-        true_k = set(ground_truth_ids[i][:k])
+    # Vectorized recall calculation using numpy
+    # Get top-k from both arrays
+    retrieved_k = retrieved_ids[:, :k]
+    true_k = ground_truth_ids[:, :k]
 
-        # Calculate intersection
-        hits = len(retrieved_k & true_k)
-        total_recall += hits / k
+    # For each query, count how many retrieved IDs are in the ground truth
+    # Use broadcasting: expand dims and compare all pairs
+    # retrieved_k: (num_queries, k) -> (num_queries, k, 1)
+    # true_k: (num_queries, k) -> (num_queries, 1, k)
+    matches = np.any(retrieved_k[:, :, np.newaxis] == true_k[:, np.newaxis, :], axis=2)
+    hits_per_query = np.sum(matches, axis=1)
 
-    return total_recall / num_queries
+    return float(np.mean(hits_per_query / k))
 
 
 def calculate_latency_percentiles(
