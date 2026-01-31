@@ -160,34 +160,78 @@ setup_pgvector() {
 setup_kdbai() {
     print_header "Setting up KDB.AI"
 
-    print_warning "KDB.AI typically requires a license or cloud subscription."
-    print_info "For local development, you can use the KDB.AI Cloud free tier:"
-    print_info "  1. Sign up at https://kdb.ai/"
-    print_info "  2. Get your endpoint URL and API key"
-    print_info "  3. Use --endpoint flag with the benchmark script"
-    echo ""
+    # KDB.AI Docker image from KX registry
+    KDBAI_IMAGE="portal.dl.kx.com/kdbai-db"
 
-    # Check if there's a local KDB.AI image available
-    if docker images --format '{{.Repository}}' | grep -q "kdbai"; then
-        print_info "Found local KDB.AI image. Attempting to start..."
-
-        cleanup_container "$KDBAI_CONTAINER"
-
-        # Try to start - this may fail without proper licensing
-        docker run -d \
-            --name "$KDBAI_CONTAINER" \
-            -p 8082:8082 \
-            --memory="$MEMORY_LIMIT" \
-            --cpus="$CPU_LIMIT" \
-            kdbai/kdbai-server:latest 2>/dev/null || {
-            print_warning "Could not start KDB.AI container (may require license)"
-        }
-    else
-        print_info "No local KDB.AI Docker image found."
-        print_info "To use KDB.AI, either:"
-        print_info "  - Use KDB.AI Cloud (recommended): https://kdb.ai/"
-        print_info "  - Contact KX for enterprise Docker image"
+    # Check for license - required for KDB.AI
+    if [ -z "$KDB_LICENSE_B64" ]; then
+        if [ -n "$KDBAI_LICENSE_FILE" ] && [ -f "$KDBAI_LICENSE_FILE" ]; then
+            print_info "Reading license from $KDBAI_LICENSE_FILE"
+            KDB_LICENSE_B64=$(base64 -w 0 "$KDBAI_LICENSE_FILE")
+            export KDB_LICENSE_B64
+        else
+            print_warning "KDB.AI requires a license from KX."
+            echo ""
+            print_info "To set up KDB.AI:"
+            echo ""
+            echo "  1. Sign up for KDB.AI Server at https://kdb.ai/"
+            echo "  2. You'll receive a welcome email with:"
+            echo "     - Docker registry credentials (Bearer Token)"
+            echo "     - License file (kc.lic)"
+            echo ""
+            echo "  3. Login to the KX Docker registry:"
+            echo "     docker login portal.dl.kx.com -u <your-email> -p <bearer-token>"
+            echo ""
+            echo "  4. Run this script with your license:"
+            echo "     export KDB_LICENSE_B64=\$(base64 -w 0 /path/to/kc.lic)"
+            echo "     $0 kdbai"
+            echo ""
+            echo "  Or set the license file path:"
+            echo "     KDBAI_LICENSE_FILE=/path/to/kc.lic $0 kdbai"
+            echo ""
+            print_info "Alternatively, use KDB.AI Cloud (no Docker needed):"
+            echo "     https://cloud.kdb.ai/"
+            return 0
+        fi
     fi
+
+    # Check if logged into KX registry
+    if ! docker pull "$KDBAI_IMAGE" --quiet 2>/dev/null; then
+        print_warning "Cannot pull KDB.AI image. You may need to login first:"
+        echo ""
+        echo "  docker login portal.dl.kx.com -u <your-email> -p <bearer-token>"
+        echo ""
+        print_info "The bearer token is in your KDB.AI welcome email."
+        return 1
+    fi
+
+    cleanup_container "$KDBAI_CONTAINER"
+
+    # Calculate CPU limit for --cpuset-cpus (KDB.AI Standard Edition limited to 24 cores)
+    local cpu_count=${CPU_LIMIT:-4}
+    if [ "$cpu_count" -gt 24 ]; then
+        print_warning "KDB.AI Standard Edition limited to 24 cores, capping CPU limit"
+        cpu_count=24
+    fi
+    local cpuset="0-$((cpu_count - 1))"
+
+    print_info "Starting KDB.AI container..."
+    docker run -d \
+        --name "$KDBAI_CONTAINER" \
+        -p 8081:8081 \
+        -p 8082:8082 \
+        --memory="$MEMORY_LIMIT" \
+        --cpuset-cpus="$cpuset" \
+        -e KDB_LICENSE_B64="$KDB_LICENSE_B64" \
+        -e VDB_DIR="/tmp/kx/data/vdb" \
+        -e THREADS="$cpu_count" \
+        -v kdbai_data:/tmp/kx/data \
+        "$KDBAI_IMAGE"
+
+    # Wait for KDB.AI to be ready
+    wait_for_container "$KDBAI_CONTAINER" "curl -s http://localhost:8082/api/v1/system/state" 60
+
+    print_success "KDB.AI is running on http://localhost:8082"
 }
 
 # Show status of all containers
@@ -232,7 +276,7 @@ cleanup_all() {
     done
 
     print_info "Removing volumes..."
-    docker volume rm qdrant_storage pgvector_data 2>/dev/null || true
+    docker volume rm qdrant_storage pgvector_data kdbai_data 2>/dev/null || true
 
     print_success "Cleanup complete"
 }
@@ -250,6 +294,10 @@ print_usage_examples() {
     echo "# Benchmark pgvector:"
     echo "python run_benchmark.py --database pgvector --dataset datasets/sift \\"
     echo "    --container $PGVECTOR_CONTAINER --endpoint localhost:5432"
+    echo ""
+    echo "# Benchmark KDB.AI:"
+    echo "python run_benchmark.py --database kdbai --dataset datasets/sift \\"
+    echo "    --container $KDBAI_CONTAINER --endpoint http://localhost:8082"
     echo ""
     echo "# Benchmark FAISS (no Docker needed):"
     echo "python run_benchmark.py --database faiss --dataset datasets/sift"
@@ -301,20 +349,27 @@ main() {
             echo "  all       Setup all databases (default)"
             echo "  qdrant    Setup only Qdrant"
             echo "  pgvector  Setup only pgvector (PostgreSQL)"
-            echo "  kdbai     Setup only KDB.AI"
+            echo "  kdbai     Setup only KDB.AI (requires license)"
             echo "  status    Show status of all containers"
             echo "  stop      Stop all benchmark containers"
             echo "  cleanup   Remove all containers and volumes"
             echo "  help      Show this help message"
             echo ""
             echo "Environment Variables:"
-            echo "  MEMORY_LIMIT  Memory limit for containers (default: 8g)"
-            echo "  CPU_LIMIT     CPU limit for containers (default: 4)"
+            echo "  MEMORY_LIMIT       Memory limit for containers (default: 8g)"
+            echo "  CPU_LIMIT          CPU limit for containers (default: 4)"
+            echo "  KDB_LICENSE_B64    Base64-encoded KDB.AI license (for kdbai)"
+            echo "  KDBAI_LICENSE_FILE Path to KDB.AI license file (alternative to KDB_LICENSE_B64)"
             echo ""
             echo "Examples:"
-            echo "  $0                    # Setup all databases"
-            echo "  $0 qdrant             # Setup only Qdrant"
-            echo "  MEMORY_LIMIT=16g $0   # Setup with 16GB memory limit"
+            echo "  $0                              # Setup all databases"
+            echo "  $0 qdrant                       # Setup only Qdrant"
+            echo "  MEMORY_LIMIT=16g $0             # Setup with 16GB memory limit"
+            echo ""
+            echo "KDB.AI Setup (requires license from https://kdb.ai/):"
+            echo "  docker login portal.dl.kx.com -u <email> -p <bearer-token>"
+            echo "  export KDB_LICENSE_B64=\$(base64 -w 0 /path/to/kc.lic)"
+            echo "  $0 kdbai"
             ;;
         *)
             print_error "Unknown command: $command"
