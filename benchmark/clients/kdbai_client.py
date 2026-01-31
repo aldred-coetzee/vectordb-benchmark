@@ -169,10 +169,11 @@ class KDBAIClient(BaseVectorDBClient):
         table = self._get_table(table_name)
 
         # Create DataFrame for insertion
+        # Use vectors.tolist() on the whole array for better performance
         df = pd.DataFrame(
             {
                 "id": ids.astype(np.int64),
-                "vectors": [v.tolist() for v in vectors],
+                "vectors": vectors.tolist(),
             }
         )
 

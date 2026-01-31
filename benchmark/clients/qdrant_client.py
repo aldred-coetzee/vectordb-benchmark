@@ -94,12 +94,9 @@ class QdrantClient(BaseVectorDBClient):
 
         # Build HNSW config based on index type
         if index_config.index_type == "flat":
-            # For exact search, disable HNSW indexing
-            # Qdrant doesn't have a true flat index, but we can use exact search
-            hnsw_config = HnswConfigDiff(
-                m=0,  # Disable HNSW
-                ef_construct=0,
-            )
+            # For exact search, we use default HNSW config but search with exact=True
+            # Qdrant doesn't have a true flat index, so we rely on SearchParams(exact=True)
+            hnsw_config = None
         elif index_config.index_type == "hnsw":
             m = index_config.params.get("M", 16)
             ef_construct = index_config.params.get("efConstruction", 64)
@@ -160,11 +157,15 @@ class QdrantClient(BaseVectorDBClient):
         if self._client is None:
             raise RuntimeError("Not connected to database")
 
+        # Convert vectors array to list of lists once for better performance
+        vectors_list = vectors.tolist()
+        ids_list = ids.tolist()
+
         # Convert to list of PointStruct
         points = [
             PointStruct(
-                id=int(ids[i]),
-                vector=vectors[i].tolist(),
+                id=int(ids_list[i]),
+                vector=vectors_list[i],
             )
             for i in range(len(ids))
         ]

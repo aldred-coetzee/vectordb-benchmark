@@ -67,11 +67,11 @@ def download_sift(output_dir: str, force: bool = False) -> Path:
         print(f"\nError downloading dataset: {e}")
         raise
 
-    # Extract
+    # Extract (using filter='data' to prevent path traversal attacks - CVE-2007-4559)
     print(f"Extracting to {output_path}...")
     try:
         with tarfile.open(tar_path, "r:gz") as tar:
-            tar.extractall(path=output_path)
+            tar.extractall(path=output_path, filter='data')
         print("Extraction complete.")
     except Exception as e:
         print(f"Error extracting dataset: {e}")
