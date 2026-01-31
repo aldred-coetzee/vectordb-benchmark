@@ -20,7 +20,7 @@ def get_client(database: str):
     Get the appropriate database client.
 
     Args:
-        database: Database name (e.g., 'kdbai', 'faiss', 'qdrant')
+        database: Database name (e.g., 'kdbai', 'faiss', 'qdrant', 'pgvector')
 
     Returns:
         Database client instance
@@ -34,10 +34,13 @@ def get_client(database: str):
     elif database.lower() == "qdrant":
         from benchmark.clients.qdrant_client import QdrantClient
         return QdrantClient()
+    elif database.lower() == "pgvector":
+        from benchmark.clients.pgvector_client import PGVectorClient
+        return PGVectorClient()
     else:
         raise ValueError(
             f"Unsupported database: {database}. "
-            f"Supported: kdbai, faiss, qdrant"
+            f"Supported: kdbai, faiss, qdrant, pgvector"
         )
 
 
@@ -62,8 +65,8 @@ Examples:
     parser.add_argument(
         "--database", "-d",
         required=True,
-        choices=["kdbai", "faiss", "qdrant"],
-        help="Database to benchmark (kdbai, faiss, or qdrant)",
+        choices=["kdbai", "faiss", "qdrant", "pgvector"],
+        help="Database to benchmark (kdbai, faiss, qdrant, or pgvector)",
     )
 
     parser.add_argument(
@@ -81,7 +84,7 @@ Examples:
     parser.add_argument(
         "--endpoint", "-e",
         default=None,
-        help="Database endpoint URL (default: kdbai=:8082, qdrant=:6333)",
+        help="Database endpoint URL (default: kdbai=:8082, qdrant=:6333, pgvector=:5432)",
     )
 
     parser.add_argument(
@@ -142,6 +145,8 @@ Examples:
             args.endpoint = "http://localhost:8082"
         elif args.database.lower() == "qdrant":
             args.endpoint = "http://localhost:6333"
+        elif args.database.lower() == "pgvector":
+            args.endpoint = "localhost:5432"
         else:
             args.endpoint = "http://localhost:8080"
 
