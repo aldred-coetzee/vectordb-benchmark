@@ -20,6 +20,15 @@ container:
   volumes:
     - weaviate-data:/var/lib/weaviate
 
+# Placeholder - requires additional configuration
+placeholder: true
+
+# Health check configuration (placeholder)
+health_check:
+  url: http://localhost:8080/v1/.well-known/ready
+  timeout: 60
+  interval: 2
+
 # Weaviate-specific parameters
 params:
   # Request timeout

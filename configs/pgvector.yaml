@@ -17,6 +17,12 @@ container:
   volumes:
     - pgvector-data:/var/lib/postgresql/data
 
+# Health check configuration
+health_check:
+  command: pg_isready -h localhost -p 5432 -U postgres
+  timeout: 60
+  interval: 2
+
 # pgvector-specific parameters
 params:
   database: vectordb

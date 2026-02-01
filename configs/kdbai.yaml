@@ -18,6 +18,12 @@ container:
   volumes:
     - kdbai-data:/data
 
+# Health check configuration
+health_check:
+  url: http://localhost:8081/api/v2/ready
+  timeout: 60
+  interval: 2
+
 # KDB.AI specific parameters
 params:
   timeout: 30
