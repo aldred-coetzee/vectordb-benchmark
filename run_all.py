@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
+from benchmark.config import load_yaml_config
 
 
 @dataclass
@@ -60,12 +60,6 @@ class SummaryResults:
     def failed(self) -> List[BenchmarkResult]:
         """Get failed results."""
         return [r for r in self.results if not r.success]
-
-
-def load_yaml_config(path: str) -> Dict[str, Any]:
-    """Load a YAML configuration file."""
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
 
 
 def find_config_files(configs_dir: str = "configs") -> List[Path]:

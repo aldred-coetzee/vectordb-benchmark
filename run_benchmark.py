@@ -23,13 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-import yaml
-
-
-def load_yaml_config(path: str) -> Dict[str, Any]:
-    """Load a YAML configuration file."""
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
+from benchmark.config import load_yaml_config
 
 
 def get_client(database: str):
@@ -267,7 +261,7 @@ def run_with_config(
             print("\nLoading dataset...")
             try:
                 dataset = SIFTDataset(str(dataset_path))
-                _ = dataset.dimensions
+                dataset.load_base_vectors()  # Explicitly trigger lazy loading
                 print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
             except Exception as e:
                 print(f"Error loading dataset: {e}, skipping")
@@ -426,7 +420,7 @@ def run_legacy(args: argparse.Namespace) -> None:
     print("\nLoading dataset...")
     try:
         dataset = SIFTDataset(str(dataset_path))
-        _ = dataset.dimensions
+        dataset.load_base_vectors()  # Explicitly trigger lazy loading
         print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
     except Exception as e:
         print(f"Error loading dataset: {e}")
