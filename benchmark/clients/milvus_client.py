@@ -1,7 +1,7 @@
 """Milvus vector database client implementation."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import numpy as np
 

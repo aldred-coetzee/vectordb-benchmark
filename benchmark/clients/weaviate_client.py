@@ -199,7 +199,7 @@ class WeaviateClient(BaseVectorDBClient):
                 batch_vectors = vectors_list[i:i + batch_size]
 
                 with collection.batch.dynamic() as batch:
-                    for j, (vid, vec) in enumerate(zip(batch_ids, batch_vectors)):
+                    for vid, vec in zip(batch_ids, batch_vectors):
                         batch.add_object(
                             properties={"vector_id": int(vid)},
                             vector=vec,

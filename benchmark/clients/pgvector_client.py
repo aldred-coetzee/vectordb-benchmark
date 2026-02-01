@@ -237,8 +237,8 @@ class PGVectorClient(BaseVectorDBClient):
 
         # Set ef_search for HNSW index if applicable
         if search_config.index_type == "hnsw":
-            ef_search = search_config.params.get("efSearch", 64)
-            self._cursor.execute(f"SET hnsw.ef_search = {ef_search}")
+            ef_search = int(search_config.params.get("efSearch", 64))
+            self._cursor.execute("SET hnsw.ef_search = %s", (ef_search,))
 
         try:
             # Convert query vector to string format for pgvector
