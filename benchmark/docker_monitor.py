@@ -7,13 +7,13 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import docker
+from docker.models.containers import Container
 
 # Timeout for waiting for monitor thread to stop (seconds)
 MONITOR_THREAD_JOIN_TIMEOUT = 5.0
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
-from docker.models.containers import Container
 
 
 @dataclass
