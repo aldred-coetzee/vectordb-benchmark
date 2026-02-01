@@ -18,6 +18,7 @@ QDRANT_CONTAINER="qdrant-benchmark"
 PGVECTOR_CONTAINER="pgvector-benchmark"
 KDBAI_CONTAINER="kdbai-benchmark"
 WEAVIATE_CONTAINER="weaviate-benchmark"
+MILVUS_CONTAINER="milvus-benchmark"
 
 # Default resource limits (can be overridden via environment variables)
 MEMORY_LIMIT="${MEMORY_LIMIT:-8g}"
@@ -265,6 +266,35 @@ setup_weaviate() {
     print_success "Weaviate is running on http://localhost:8080"
 }
 
+# Setup Milvus
+setup_milvus() {
+    print_header "Setting up Milvus"
+
+    cleanup_container "$MILVUS_CONTAINER"
+
+    print_info "Pulling Milvus image..."
+    docker pull milvusdb/milvus:latest
+
+    print_info "Starting Milvus container..."
+    docker run -d \
+        --name "$MILVUS_CONTAINER" \
+        -p 19530:19530 \
+        -p 9091:9091 \
+        --memory="$MEMORY_LIMIT" \
+        --cpus="$CPU_LIMIT" \
+        -e ETCD_USE_EMBED=true \
+        -e ETCD_DATA_DIR=/var/lib/milvus/etcd \
+        -e COMMON_STORAGETYPE=local \
+        -v milvus_data:/var/lib/milvus \
+        milvusdb/milvus:latest \
+        milvus run standalone
+
+    # Wait for Milvus to be ready
+    wait_for_container "$MILVUS_CONTAINER" "curl -s http://localhost:9091/healthz" 60
+
+    print_success "Milvus is running on localhost:19530"
+}
+
 # Show status of all containers
 show_status() {
     print_header "Container Status"
@@ -272,7 +302,7 @@ show_status() {
     echo "Database Containers:"
     echo "-------------------"
 
-    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER"; do
+    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER" "$MILVUS_CONTAINER"; do
         if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
             status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null)
             print_success "$container: $status"
@@ -289,7 +319,7 @@ show_status() {
 stop_all() {
     print_header "Stopping All Containers"
 
-    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER"; do
+    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER" "$MILVUS_CONTAINER"; do
         if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
             print_info "Stopping $container..."
             docker stop "$container" &> /dev/null
@@ -302,12 +332,12 @@ stop_all() {
 cleanup_all() {
     print_header "Cleaning Up All Containers and Volumes"
 
-    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER"; do
+    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER" "$MILVUS_CONTAINER"; do
         cleanup_container "$container"
     done
 
     print_info "Removing volumes..."
-    docker volume rm qdrant_storage pgvector_data kdbai_data weaviate_data 2>/dev/null || true
+    docker volume rm qdrant_storage pgvector_data kdbai_data weaviate_data milvus_data 2>/dev/null || true
 
     print_success "Cleanup complete"
 }
@@ -334,6 +364,10 @@ print_usage_examples() {
     echo "python run_benchmark.py --database weaviate --dataset datasets/sift \\"
     echo "    --container $WEAVIATE_CONTAINER --endpoint http://localhost:8080"
     echo ""
+    echo "# Benchmark Milvus:"
+    echo "python run_benchmark.py --database milvus --dataset datasets/sift \\"
+    echo "    --container $MILVUS_CONTAINER --endpoint localhost:19530"
+    echo ""
     echo "# Benchmark FAISS (no Docker needed):"
     echo "python run_benchmark.py --database faiss --dataset datasets/sift"
     echo ""
@@ -351,6 +385,7 @@ main() {
             setup_qdrant
             setup_pgvector
             setup_weaviate
+            setup_milvus
             setup_kdbai
             show_status
             print_usage_examples
@@ -366,6 +401,10 @@ main() {
         weaviate)
             check_docker
             setup_weaviate
+            ;;
+        milvus)
+            check_docker
+            setup_milvus
             ;;
         kdbai)
             check_docker
@@ -390,6 +429,7 @@ main() {
             echo "  qdrant    Setup only Qdrant"
             echo "  pgvector  Setup only pgvector (PostgreSQL)"
             echo "  weaviate  Setup only Weaviate"
+            echo "  milvus    Setup only Milvus"
             echo "  kdbai     Setup only KDB.AI (requires license)"
             echo "  status    Show status of all containers"
             echo "  stop      Stop all benchmark containers"
@@ -406,6 +446,7 @@ main() {
             echo "  $0                              # Setup all databases"
             echo "  $0 qdrant                       # Setup only Qdrant"
             echo "  $0 weaviate                     # Setup only Weaviate"
+            echo "  $0 milvus                       # Setup only Milvus"
             echo "  MEMORY_LIMIT=16g $0             # Setup with 16GB memory limit"
             echo ""
             echo "KDB.AI Setup (requires license from https://kdb.ai/):"
