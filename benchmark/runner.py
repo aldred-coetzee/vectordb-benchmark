@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+# Progress reporting interval (print progress every N queries)
+SEARCH_PROGRESS_INTERVAL = 2000
+
 from .clients.base import BaseVectorDBClient, IndexConfig, SearchConfig
 from .data_loader import SIFTDataset
 from .docker_monitor import DockerMonitor, MonitoringResult
@@ -225,7 +228,7 @@ class BenchmarkRunner:
             latencies_ms.append(result.latency_ms)
             all_retrieved_ids.append(result.ids)
 
-            if (i + 1) % 2000 == 0:
+            if (i + 1) % SEARCH_PROGRESS_INTERVAL == 0:
                 elapsed = time.perf_counter() - start_time
                 current_qps = (i + 1) / elapsed
                 print(f"      Progress: {i + 1:,}/{num_queries:,} ({current_qps:,.0f} QPS)")

@@ -26,6 +26,35 @@ from typing import Any, Dict, List, Optional, Set
 from benchmark.config import load_yaml_config
 
 
+def parse_memory_string(memory: Any) -> float:
+    """
+    Parse a memory string (e.g., "8g") into GB as a float.
+
+    Args:
+        memory: Memory value as string (e.g., "8g", "16G") or numeric
+
+    Returns:
+        Memory in GB as float, or 0.0 if parsing fails
+    """
+    if isinstance(memory, (int, float)):
+        return float(memory)
+
+    if isinstance(memory, str):
+        memory_lower = memory.lower().strip()
+        if memory_lower.endswith("g"):
+            try:
+                return float(memory_lower[:-1])
+            except ValueError:
+                pass
+        elif memory_lower.endswith("m"):
+            try:
+                return float(memory_lower[:-1]) / 1024
+            except ValueError:
+                pass
+
+    return 0.0
+
+
 def get_client(database: str):
     """
     Get the appropriate database client.
@@ -151,14 +180,7 @@ def run_with_config(
     memory = container_config.get("memory", "0g")
 
     # Parse memory string (e.g., "8g" -> 8.0)
-    memory_gb = 0.0
-    if isinstance(memory, str) and memory.endswith("g"):
-        try:
-            memory_gb = float(memory[:-1])
-        except ValueError:
-            pass
-    elif isinstance(memory, (int, float)):
-        memory_gb = float(memory)
+    memory_gb = parse_memory_string(memory)
 
     # Initialize Docker manager
     docker_manager = None

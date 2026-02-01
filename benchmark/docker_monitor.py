@@ -8,6 +8,9 @@ from typing import Optional
 
 import docker
 
+# Timeout for waiting for monitor thread to stop (seconds)
+MONITOR_THREAD_JOIN_TIMEOUT = 5.0
+
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 from docker.models.containers import Container
@@ -194,7 +197,7 @@ class DockerMonitor:
 
         if self._monitor_thread is not None:
             # Wait longer for thread to finish (Docker stats can take time)
-            self._monitor_thread.join(timeout=5.0)
+            self._monitor_thread.join(timeout=MONITOR_THREAD_JOIN_TIMEOUT)
             # Only clear thread reference if it actually terminated
             # to prevent start_monitoring from creating a new thread
             # while the old one is still running

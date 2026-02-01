@@ -126,13 +126,9 @@ def run_single_benchmark(
     cpus = container_config.get("cpus", 0)
     memory = container_config.get("memory", "0g")
 
-    # Parse memory
-    memory_gb = 0.0
-    if isinstance(memory, str) and memory.endswith("g"):
-        try:
-            memory_gb = float(memory[:-1])
-        except ValueError:
-            pass
+    # Parse memory using shared utility function
+    from run_benchmark import parse_memory_string
+    memory_gb = parse_memory_string(memory)
 
     # Initialize Docker manager
     docker_manager = None
@@ -218,7 +214,8 @@ def run_single_benchmark(
                 try:
                     monitor = DockerMonitor(effective_container_name)
                     monitor.connect()
-                except Exception:
+                except Exception as e:
+                    print(f"Warning: Could not connect to Docker monitor: {e}")
                     monitor = None
 
             # Run benchmark

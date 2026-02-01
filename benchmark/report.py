@@ -202,59 +202,62 @@ def plot_recall_vs_qps(
     flat_results = [r for r in results if r.index_type.upper() == "FLAT"]
     hnsw_results = [r for r in results if r.index_type.upper() == "HNSW"]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig = None
+    try:
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-    # Plot HNSW results
-    if hnsw_results:
-        recalls = [r.recall_at_10 for r in hnsw_results]
-        qps_values = [r.qps for r in hnsw_results]
-        labels = [r.search_config for r in hnsw_results]
+        # Plot HNSW results
+        if hnsw_results:
+            recalls = [r.recall_at_10 for r in hnsw_results]
+            qps_values = [r.qps for r in hnsw_results]
+            labels = [r.search_config for r in hnsw_results]
 
-        ax.scatter(recalls, qps_values, s=100, label="HNSW", marker="o", color="blue")
+            ax.scatter(recalls, qps_values, s=100, label="HNSW", marker="o", color="blue")
 
-        # Add labels for each point
-        for i, (x, y, label) in enumerate(zip(recalls, qps_values, labels)):
-            ax.annotate(
-                label,
-                (x, y),
-                textcoords="offset points",
-                xytext=(5, 5),
-                fontsize=8,
+            # Add labels for each point
+            for i, (x, y, label) in enumerate(zip(recalls, qps_values, labels)):
+                ax.annotate(
+                    label,
+                    (x, y),
+                    textcoords="offset points",
+                    xytext=(5, 5),
+                    fontsize=8,
+                )
+
+        # Plot Flat results (should be a single point at recall=1.0)
+        if flat_results:
+            recalls = [r.recall_at_10 for r in flat_results]
+            qps_values = [r.qps for r in flat_results]
+
+            ax.scatter(
+                recalls, qps_values, s=100, label="Flat (baseline)",
+                marker="s", color="red"
             )
 
-    # Plot Flat results (should be a single point at recall=1.0)
-    if flat_results:
-        recalls = [r.recall_at_10 for r in flat_results]
-        qps_values = [r.qps for r in flat_results]
+        ax.set_xlabel("Recall@10", fontsize=12)
+        ax.set_ylabel("Queries Per Second (QPS)", fontsize=12)
+        ax.set_title(title, fontsize=14)
+        ax.set_yscale("log")  # Log scale for QPS
 
-        ax.scatter(
-            recalls, qps_values, s=100, label="Flat (baseline)",
-            marker="s", color="red"
-        )
+        # Dynamically set x-axis limits based on data with some padding
+        all_recalls = [r.recall_at_10 for r in results]
+        if all_recalls:
+            min_recall = min(all_recalls)
+            # Set lower bound to be 10% below min recall, but at least 0
+            lower_bound = max(0, min_recall - 0.1)
+            ax.set_xlim(lower_bound, 1.02)
+        else:
+            ax.set_xlim(0.7, 1.02)
 
-    ax.set_xlabel("Recall@10", fontsize=12)
-    ax.set_ylabel("Queries Per Second (QPS)", fontsize=12)
-    ax.set_title(title, fontsize=14)
-    ax.set_yscale("log")  # Log scale for QPS
+        ax.grid(True, alpha=0.3)
+        ax.legend()
 
-    # Dynamically set x-axis limits based on data with some padding
-    all_recalls = [r.recall_at_10 for r in results]
-    if all_recalls:
-        min_recall = min(all_recalls)
-        # Set lower bound to be 10% below min recall, but at least 0
-        lower_bound = max(0, min_recall - 0.1)
-        ax.set_xlim(lower_bound, 1.02)
-    else:
-        ax.set_xlim(0.7, 1.02)
-
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    plt.tight_layout()
-    plt.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close()
-
-    print(f"Saved plot to {path}")
+        plt.tight_layout()
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        print(f"Saved plot to {path}")
+    finally:
+        if fig is not None:
+            plt.close(fig)
 
 
 def generate_full_report(
