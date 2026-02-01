@@ -1,6 +1,7 @@
 """SQLite storage for benchmark results."""
 
 import json
+import re
 import socket
 import sqlite3
 from datetime import datetime
@@ -264,7 +265,6 @@ class BenchmarkDatabase:
         # Handles formats like "efSearch=64" or "-" (for flat index)
         ef_search = None
         if result.search_config:
-            import re
             match = re.search(r'efSearch=(\d+)', result.search_config)
             if match:
                 ef_search = int(match.group(1))
