@@ -318,8 +318,8 @@ class BenchmarkRunner:
                 limits = self.monitor.get_container_limits()
                 docker_cpu = limits.get("cpu_limit", 0)
                 docker_memory_gb = limits.get("memory_limit_gb", 0)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: Could not get container limits: {e}")
 
         results = BenchmarkResults(
             database_name=self.client.name,
