@@ -25,21 +25,27 @@ def _read_vecs(filename: str, dtype: np.dtype) -> np.ndarray:
     if not path.exists():
         raise FileNotFoundError(f"File not found: {filename}")
 
-    # Read dimension from first vector to calculate count
+    # Calculate file size for vector count estimation
+    file_size = path.stat().st_size
+
+    # Read all data in a single file open operation for efficiency
     with open(path, "rb") as f:
+        # Read dimension from first vector
         dim = struct.unpack("i", f.read(4))[0]
 
-    # Calculate number of vectors from file size
-    # Each vector: 4 bytes (dim) + dim * 4 bytes (data)
-    file_size = path.stat().st_size
-    vector_size = 4 + dim * 4
-    num_vectors = file_size // vector_size
+        # Calculate number of vectors from file size
+        # Each vector: 4 bytes (dim) + dim * 4 bytes (data)
+        vector_size = 4 + dim * 4
+        num_vectors = file_size // vector_size
 
-    # Pre-allocate array for efficiency
-    vectors = np.empty((num_vectors, dim), dtype=dtype)
+        # Pre-allocate array for efficiency
+        vectors = np.empty((num_vectors, dim), dtype=dtype)
 
-    with open(path, "rb") as f:
-        for i in range(num_vectors):
+        # Read first vector data (dimension already read)
+        vectors[0] = np.frombuffer(f.read(dim * 4), dtype=dtype)
+
+        # Read remaining vectors
+        for i in range(1, num_vectors):
             # Read and verify dimension
             vec_dim = struct.unpack("i", f.read(4))[0]
             if vec_dim != dim:
