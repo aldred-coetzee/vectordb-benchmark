@@ -20,6 +20,7 @@ Usage:
 
 import argparse
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -354,7 +355,6 @@ def run_with_config(
                 break
             except Exception as e:
                 print(f"\nError during benchmark: {e}")
-                import traceback
                 traceback.print_exc()
             finally:
                 if monitor:
@@ -513,7 +513,6 @@ def run_legacy(args: argparse.Namespace) -> None:
         sys.exit(1)
     except Exception as e:
         print(f"\nError during benchmark: {e}")
-        import traceback
         traceback.print_exc()
         sys.exit(1)
     finally:

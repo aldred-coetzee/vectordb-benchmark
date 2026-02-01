@@ -21,6 +21,7 @@ Usage:
 import argparse
 import sys
 import time
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -268,7 +269,6 @@ def run_single_benchmark(
         )
 
     except Exception as e:
-        import traceback
         traceback.print_exc()
         duration = time.time() - start_time
         return BenchmarkResult(

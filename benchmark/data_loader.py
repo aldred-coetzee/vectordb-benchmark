@@ -7,18 +7,19 @@ from typing import Iterator, Tuple
 import numpy as np
 
 
-def read_fvecs(filename: str) -> np.ndarray:
+def _read_vecs(filename: str, dtype: np.dtype) -> np.ndarray:
     """
-    Read vectors from a .fvecs file.
+    Read vectors from a .fvecs or .ivecs file.
 
     Format: Each vector is prefixed with a 4-byte int32 dimension,
-    followed by dim * 4 bytes of float32 data.
+    followed by dim * 4 bytes of data.
 
     Args:
-        filename: Path to the .fvecs file
+        filename: Path to the vector file
+        dtype: NumPy dtype for the vector elements (np.float32 or np.int32)
 
     Returns:
-        numpy array of shape (num_vectors, dimension) with dtype float32
+        numpy array of shape (num_vectors, dimension) with the specified dtype
     """
     path = Path(filename)
     if not path.exists():
@@ -35,19 +36,37 @@ def read_fvecs(filename: str) -> np.ndarray:
     num_vectors = file_size // vector_size
 
     # Pre-allocate array for efficiency
-    vectors = np.empty((num_vectors, dim), dtype=np.float32)
+    vectors = np.empty((num_vectors, dim), dtype=dtype)
 
     with open(path, "rb") as f:
         for i in range(num_vectors):
             # Read and verify dimension
             vec_dim = struct.unpack("i", f.read(4))[0]
             if vec_dim != dim:
-                raise ValueError(f"Inconsistent dimension at vector {i}: expected {dim}, got {vec_dim}")
+                raise ValueError(
+                    f"Inconsistent dimension at vector {i}: expected {dim}, got {vec_dim}"
+                )
 
             # Read vector data directly into pre-allocated array
-            vectors[i] = np.frombuffer(f.read(dim * 4), dtype=np.float32)
+            vectors[i] = np.frombuffer(f.read(dim * 4), dtype=dtype)
 
     return vectors
+
+
+def read_fvecs(filename: str) -> np.ndarray:
+    """
+    Read vectors from a .fvecs file.
+
+    Format: Each vector is prefixed with a 4-byte int32 dimension,
+    followed by dim * 4 bytes of float32 data.
+
+    Args:
+        filename: Path to the .fvecs file
+
+    Returns:
+        numpy array of shape (num_vectors, dimension) with dtype float32
+    """
+    return _read_vecs(filename, np.float32)
 
 
 def read_ivecs(filename: str) -> np.ndarray:
@@ -63,34 +82,7 @@ def read_ivecs(filename: str) -> np.ndarray:
     Returns:
         numpy array of shape (num_vectors, dimension) with dtype int32
     """
-    path = Path(filename)
-    if not path.exists():
-        raise FileNotFoundError(f"File not found: {filename}")
-
-    # Read dimension from first vector to calculate count
-    with open(path, "rb") as f:
-        dim = struct.unpack("i", f.read(4))[0]
-
-    # Calculate number of vectors from file size
-    # Each vector: 4 bytes (dim) + dim * 4 bytes (data)
-    file_size = path.stat().st_size
-    vector_size = 4 + dim * 4
-    num_vectors = file_size // vector_size
-
-    # Pre-allocate array for efficiency
-    vectors = np.empty((num_vectors, dim), dtype=np.int32)
-
-    with open(path, "rb") as f:
-        for i in range(num_vectors):
-            # Read and verify dimension
-            vec_dim = struct.unpack("i", f.read(4))[0]
-            if vec_dim != dim:
-                raise ValueError(f"Inconsistent dimension at vector {i}: expected {dim}, got {vec_dim}")
-
-            # Read vector data directly into pre-allocated array
-            vectors[i] = np.frombuffer(f.read(dim * 4), dtype=np.int32)
-
-    return vectors
+    return _read_vecs(filename, np.int32)
 
 
 class SIFTDataset:
