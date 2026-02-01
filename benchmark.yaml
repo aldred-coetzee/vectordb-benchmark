@@ -1,0 +1,51 @@
+# Shared Benchmark Configuration
+# This file defines datasets, index types, and search parameters for all databases
+
+datasets:
+  sift:
+    path: datasets/sift
+    vectors: 1000000
+    dimensions: 128
+  gist:
+    # Placeholder for future GIST-1M dataset
+    path: datasets/gist
+    vectors: 1000000
+    dimensions: 960
+
+indexes:
+  flat:
+    # Flat index (brute-force exact search)
+    # No additional parameters required
+    params: {}
+
+  hnsw:
+    # Hierarchical Navigable Small World index
+    M: 16
+    efConstruction: 64
+    efSearch:
+      - 8
+      - 16
+      - 32
+      - 64
+      - 128
+      - 256
+
+  ivf:
+    # Placeholder for IVF index
+    # nlist: 100
+    # nprobe: [1, 5, 10, 20]
+    params: {}
+
+  ivfpq:
+    # Placeholder for IVF with Product Quantization
+    # nlist: 100
+    # m: 8
+    # nbits: 8
+    # nprobe: [1, 5, 10, 20]
+    params: {}
+
+search:
+  k: 10
+  num_queries: 10000
+  warmup: 100
+  batch_size: 50000

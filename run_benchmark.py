@@ -6,6 +6,14 @@ Benchmarks vector database performance measuring ingest speed, query speed,
 and recall accuracy.
 
 Usage:
+    # New config-based interface
+    python run_benchmark.py --config configs/kdbai.yaml --benchmark benchmark.yaml
+
+    # With optional filters
+    python run_benchmark.py --config configs/kdbai.yaml --benchmark benchmark.yaml \
+        --dataset sift --indexes flat,hnsw
+
+    # Legacy interface (still supported)
     python run_benchmark.py --database kdbai --dataset datasets/sift \
         --container kdbai-bench --cpus 8 --memory 32
 """
@@ -13,6 +21,15 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+
+import yaml
+
+
+def load_yaml_config(path: str) -> Dict[str, Any]:
+    """Load a YAML configuration file."""
+    with open(path, "r") as f:
+        return yaml.safe_load(f)
 
 
 def get_client(database: str):
@@ -50,85 +67,274 @@ def get_client(database: str):
         )
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Vector Database Benchmark Tool",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    # Run benchmark with KDB.AI
-    python run_benchmark.py --database kdbai --dataset datasets/sift \\
-        --container kdbai-bench
+def get_supported_indexes(client) -> Set[str]:
+    """
+    Get the set of index types supported by a client.
 
-    # Download dataset first
-    python datasets/download_sift.py --output datasets
+    Args:
+        client: Database client instance
 
-    # Run without Docker monitoring
-    python run_benchmark.py --database kdbai --dataset datasets/sift
-        """,
-    )
+    Returns:
+        Set of supported index type names (lowercase)
+    """
+    # Check if client has a supported_indexes property/method
+    if hasattr(client, "supported_indexes"):
+        indexes = client.supported_indexes
+        if callable(indexes):
+            indexes = indexes()
+        return set(idx.lower() for idx in indexes)
 
-    parser.add_argument(
-        "--database", "-d",
-        required=True,
-        choices=["kdbai", "faiss", "qdrant", "pgvector", "weaviate", "milvus"],
-        help="Database to benchmark (kdbai, faiss, qdrant, pgvector, weaviate, or milvus)",
-    )
+    # Default: assume flat and hnsw are supported
+    return {"flat", "hnsw"}
 
-    parser.add_argument(
-        "--dataset", "-s",
-        required=True,
-        help="Path to dataset directory (e.g., datasets/sift)",
-    )
 
-    parser.add_argument(
-        "--container", "-c",
-        default=None,
-        help="Docker container name for resource monitoring",
-    )
+def filter_indexes(
+    requested: List[str],
+    supported: Set[str],
+    database_name: str,
+) -> List[str]:
+    """
+    Filter requested indexes to only those supported by the database.
 
-    parser.add_argument(
-        "--endpoint", "-e",
-        default=None,
-        help="Database endpoint URL (default: kdbai=:8082, qdrant=:6333, pgvector=:5432, weaviate=:8080, milvus=:19530)",
-    )
+    Args:
+        requested: List of requested index types
+        supported: Set of supported index types
+        database_name: Name of the database (for logging)
 
-    parser.add_argument(
-        "--cpus",
-        type=int,
-        default=0,
-        help="Docker CPU limit (for report metadata only)",
-    )
+    Returns:
+        List of indexes that are both requested and supported
+    """
+    filtered = []
+    for idx in requested:
+        idx_lower = idx.lower()
+        if idx_lower in supported:
+            filtered.append(idx_lower)
+        else:
+            print(f"Warning: Index type '{idx}' not supported by {database_name}, skipping")
 
-    parser.add_argument(
-        "--memory",
-        type=int,
-        default=0,
-        help="Docker memory limit in GB (for report metadata only)",
-    )
+    return filtered
 
-    parser.add_argument(
-        "--output", "-o",
-        default="results",
-        help="Output directory for results (default: results)",
-    )
 
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=50000,
-        help="Batch size for vector insertion (default: 50000)",
-    )
+def run_with_config(
+    config: Dict[str, Any],
+    benchmark_config: Dict[str, Any],
+    dataset_filter: Optional[str],
+    indexes_filter: Optional[List[str]],
+    output_dir: str,
+    container_name: Optional[str],
+) -> None:
+    """
+    Run benchmark using YAML configuration.
 
-    parser.add_argument(
-        "--ef-search",
-        type=int,
-        nargs="+",
-        default=[8, 16, 32, 64, 128, 256],
-        help="HNSW efSearch values to test (default: 8 16 32 64 128 256)",
-    )
+    Args:
+        config: Database-specific configuration
+        benchmark_config: Shared benchmark configuration
+        dataset_filter: Optional dataset name to run (None = all)
+        indexes_filter: Optional list of index types to run (None = all)
+        output_dir: Directory for output files
+        container_name: Optional Docker container name for monitoring
+    """
+    from benchmark.data_loader import SIFTDataset
+    from benchmark.docker_monitor import DockerMonitor
+    from benchmark.runner import BenchmarkRunner
+    from benchmark.report import generate_full_report
+    from benchmark.db import BenchmarkDatabase
 
-    args = parser.parse_args()
+    # Extract database info from config
+    db_config = config.get("database", {})
+    database_name = db_config.get("name", "unknown")
+    db_version = db_config.get("version")
+    endpoint = db_config.get("endpoint")
+
+    # Extract container settings if present
+    container_config = config.get("container", {})
+    cpus = container_config.get("cpus", 0)
+    memory = container_config.get("memory", "0g")
+
+    # Parse memory string (e.g., "8g" -> 8.0)
+    memory_gb = 0.0
+    if isinstance(memory, str) and memory.endswith("g"):
+        try:
+            memory_gb = float(memory[:-1])
+        except ValueError:
+            pass
+    elif isinstance(memory, (int, float)):
+        memory_gb = float(memory)
+
+    # Extract search settings from benchmark config
+    search_config = benchmark_config.get("search", {})
+    batch_size = search_config.get("batch_size", 50000)
+    num_queries = search_config.get("num_queries", 10000)
+
+    # Determine which datasets to run
+    datasets_config = benchmark_config.get("datasets", {})
+    if dataset_filter:
+        if dataset_filter not in datasets_config:
+            print(f"Error: Dataset '{dataset_filter}' not found in benchmark config")
+            print(f"Available datasets: {list(datasets_config.keys())}")
+            sys.exit(1)
+        datasets_to_run = {dataset_filter: datasets_config[dataset_filter]}
+    else:
+        datasets_to_run = datasets_config
+
+    # Determine which indexes to run
+    indexes_config = benchmark_config.get("indexes", {})
+    all_indexes = list(indexes_config.keys())
+
+    if indexes_filter:
+        requested_indexes = [idx.strip() for idx in indexes_filter]
+        # Validate requested indexes exist in config
+        for idx in requested_indexes:
+            if idx.lower() not in [i.lower() for i in all_indexes]:
+                print(f"Warning: Index '{idx}' not found in benchmark config, skipping")
+    else:
+        requested_indexes = all_indexes
+
+    # Initialize database client
+    print(f"\nConnecting to {database_name}...")
+    try:
+        client = get_client(database_name)
+        if endpoint:
+            client.connect(endpoint=endpoint)
+        else:
+            client.connect()
+    except Exception as e:
+        print(f"Error connecting to database: {e}")
+        sys.exit(1)
+
+    # Filter indexes by what the client supports
+    supported = get_supported_indexes(client)
+    indexes_to_run = filter_indexes(requested_indexes, supported, database_name)
+
+    if not indexes_to_run:
+        print("Error: No valid indexes to run after filtering")
+        client.disconnect()
+        sys.exit(1)
+
+    print(f"Indexes to run: {indexes_to_run}")
+
+    # Initialize SQLite database
+    db = BenchmarkDatabase()
+
+    # Run benchmarks for each dataset
+    for dataset_name, dataset_info in datasets_to_run.items():
+        dataset_path = Path(dataset_info.get("path", f"datasets/{dataset_name}"))
+
+        # Validate dataset exists
+        if not dataset_path.exists():
+            print(f"Warning: Dataset path not found: {dataset_path}, skipping")
+            continue
+
+        # Check for required files
+        required_files = ["sift_base.fvecs", "sift_query.fvecs", "sift_groundtruth.ivecs"]
+        missing_files = [f for f in required_files if not (dataset_path / f).exists()]
+        if missing_files:
+            print(f"Warning: Missing files in {dataset_path}: {missing_files}, skipping")
+            continue
+
+        print(f"\n{'='*80}")
+        print(f"BENCHMARKING: {database_name} with {dataset_name} dataset")
+        print(f"{'='*80}")
+
+        # Load dataset
+        print("\nLoading dataset...")
+        try:
+            dataset = SIFTDataset(str(dataset_path))
+            _ = dataset.dimensions
+            print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
+        except Exception as e:
+            print(f"Error loading dataset: {e}, skipping")
+            continue
+
+        # Initialize Docker monitor
+        monitor = None
+        if database_name.lower() == "faiss":
+            print("\nFAISS runs in-process - skipping Docker container monitoring")
+        elif container_name:
+            print(f"\nConnecting to Docker container '{container_name}'...")
+            try:
+                monitor = DockerMonitor(container_name)
+                monitor.connect()
+                limits = monitor.get_container_limits()
+                print(f"  Memory limit: {limits.get('memory_limit_gb', 0):.1f} GB")
+                print(f"  CPU limit: {limits.get('cpu_limit', 0):.1f} cores")
+            except Exception as e:
+                print(f"Warning: Could not connect to Docker container: {e}")
+                monitor = None
+
+        # Prepare index configs
+        hnsw_config = indexes_config.get("hnsw", {})
+        ef_search_values = hnsw_config.get("efSearch", [8, 16, 32, 64, 128, 256])
+
+        # Run benchmark
+        try:
+            runner = BenchmarkRunner(client, dataset, monitor)
+            runner.batch_size = batch_size
+
+            # Run the benchmark with filtered indexes
+            results = runner.run_full_benchmark(
+                hnsw_ef_search_values=ef_search_values,
+                indexes_to_run=indexes_to_run,
+            )
+
+            # Override Docker limits with config values if provided
+            if cpus > 0:
+                results.docker_cpu_limit = float(cpus)
+            if memory_gb > 0:
+                results.docker_memory_limit_gb = memory_gb
+
+            # Generate reports (CSV and console)
+            generate_full_report(results, output_dir)
+
+            # Save to SQLite
+            run_id = db.save_benchmark_results(
+                results=results,
+                config=config,
+                benchmark_config=benchmark_config,
+                batch_size=batch_size,
+                num_queries=num_queries,
+                db_version=db_version,
+            )
+            print(f"\nResults saved to SQLite (run_id: {run_id})")
+
+            print("\nBenchmark complete!")
+            print(f"Results saved to: {output_dir}/")
+
+        except KeyboardInterrupt:
+            print("\nBenchmark interrupted by user.")
+            break
+        except Exception as e:
+            print(f"\nError during benchmark: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            if monitor:
+                try:
+                    monitor.disconnect()
+                except Exception:
+                    pass
+
+    # Cleanup
+    print("\nCleaning up...")
+    try:
+        client.disconnect()
+    except Exception:
+        pass
+    db.close()
+
+
+def run_legacy(args: argparse.Namespace) -> None:
+    """
+    Run benchmark using legacy CLI arguments.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    from benchmark.data_loader import SIFTDataset
+    from benchmark.docker_monitor import DockerMonitor
+    from benchmark.runner import BenchmarkRunner
+    from benchmark.report import generate_full_report
+    from benchmark.db import BenchmarkDatabase
 
     # Validate dataset path
     dataset_path = Path(args.dataset)
@@ -171,24 +377,17 @@ Examples:
     print(f"efSearch:    {args.ef_search}")
     print("=" * 80)
 
-    # Import here to avoid issues if dependencies aren't installed
-    from benchmark.data_loader import SIFTDataset
-    from benchmark.docker_monitor import DockerMonitor
-    from benchmark.runner import BenchmarkRunner
-    from benchmark.report import generate_full_report
-
     # Load dataset
     print("\nLoading dataset...")
     try:
         dataset = SIFTDataset(str(dataset_path))
-        # Force loading to validate files
         _ = dataset.dimensions
         print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
     except Exception as e:
         print(f"Error loading dataset: {e}")
         sys.exit(1)
 
-    # Initialize Docker monitor (optional, not used for in-process databases like FAISS)
+    # Initialize Docker monitor
     monitor = None
     if args.database.lower() == "faiss":
         print("\nFAISS runs in-process - skipping Docker container monitoring")
@@ -202,7 +401,6 @@ Examples:
             print(f"  CPU limit: {limits.get('cpu_limit', 0):.1f} cores")
         except Exception as e:
             print(f"Warning: Could not connect to Docker container: {e}")
-            print("Continuing without resource monitoring...")
             monitor = None
 
     # Initialize database client
@@ -213,6 +411,9 @@ Examples:
     except Exception as e:
         print(f"Error connecting to database: {e}")
         sys.exit(1)
+
+    # Initialize SQLite database
+    db = BenchmarkDatabase()
 
     # Run benchmark
     try:
@@ -231,6 +432,14 @@ Examples:
 
         # Generate reports
         generate_full_report(results, args.output)
+
+        # Save to SQLite
+        run_id = db.save_benchmark_results(
+            results=results,
+            batch_size=args.batch_size,
+            num_queries=10000,  # Default from original
+        )
+        print(f"\nResults saved to SQLite (run_id: {run_id})")
 
         print("\nBenchmark complete!")
         print(f"Results saved to: {args.output}/")
@@ -255,6 +464,156 @@ Examples:
                 monitor.disconnect()
             except Exception:
                 pass
+        db.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Vector Database Benchmark Tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # New config-based interface
+    python run_benchmark.py --config configs/kdbai.yaml --benchmark benchmark.yaml
+
+    # With filters
+    python run_benchmark.py --config configs/kdbai.yaml --benchmark benchmark.yaml \\
+        --dataset sift --indexes flat,hnsw
+
+    # Legacy interface
+    python run_benchmark.py --database kdbai --dataset datasets/sift \\
+        --container kdbai-bench
+
+    # Download dataset first
+    python datasets/download_sift.py --output datasets
+        """,
+    )
+
+    # Config-based arguments (new interface)
+    config_group = parser.add_argument_group("Config-based interface (recommended)")
+    config_group.add_argument(
+        "--config", "-c",
+        help="Path to database-specific YAML config (e.g., configs/kdbai.yaml)",
+    )
+    config_group.add_argument(
+        "--benchmark", "-b",
+        help="Path to shared benchmark YAML config (default: benchmark.yaml)",
+    )
+    config_group.add_argument(
+        "--indexes", "-i",
+        help="Comma-separated list of index types to run (e.g., flat,hnsw)",
+    )
+
+    # Legacy arguments
+    legacy_group = parser.add_argument_group("Legacy interface")
+    legacy_group.add_argument(
+        "--database", "-d",
+        choices=["kdbai", "faiss", "qdrant", "pgvector", "weaviate", "milvus"],
+        help="Database to benchmark",
+    )
+    legacy_group.add_argument(
+        "--endpoint", "-e",
+        default=None,
+        help="Database endpoint URL",
+    )
+    legacy_group.add_argument(
+        "--batch-size",
+        type=int,
+        default=50000,
+        help="Batch size for vector insertion (default: 50000)",
+    )
+    legacy_group.add_argument(
+        "--ef-search",
+        type=int,
+        nargs="+",
+        default=[8, 16, 32, 64, 128, 256],
+        help="HNSW efSearch values to test (default: 8 16 32 64 128 256)",
+    )
+
+    # Common arguments
+    common_group = parser.add_argument_group("Common options")
+    common_group.add_argument(
+        "--dataset", "-s",
+        help="Dataset name (config mode) or path (legacy mode)",
+    )
+    common_group.add_argument(
+        "--container",
+        default=None,
+        help="Docker container name for resource monitoring",
+    )
+    common_group.add_argument(
+        "--cpus",
+        type=int,
+        default=0,
+        help="Docker CPU limit (for report metadata only)",
+    )
+    common_group.add_argument(
+        "--memory",
+        type=int,
+        default=0,
+        help="Docker memory limit in GB (for report metadata only)",
+    )
+    common_group.add_argument(
+        "--output", "-o",
+        default="results",
+        help="Output directory for results (default: results)",
+    )
+
+    args = parser.parse_args()
+
+    # Determine which mode to run in
+    if args.config:
+        # Config-based mode
+        if not Path(args.config).exists():
+            print(f"Error: Config file not found: {args.config}")
+            sys.exit(1)
+
+        # Load database config
+        config = load_yaml_config(args.config)
+
+        # Load benchmark config
+        benchmark_path = args.benchmark or "benchmark.yaml"
+        if not Path(benchmark_path).exists():
+            print(f"Error: Benchmark config not found: {benchmark_path}")
+            sys.exit(1)
+        benchmark_config = load_yaml_config(benchmark_path)
+
+        # Parse indexes filter
+        indexes_filter = None
+        if args.indexes:
+            indexes_filter = [idx.strip() for idx in args.indexes.split(",")]
+
+        print("=" * 80)
+        print("VECTOR DATABASE BENCHMARK (Config Mode)")
+        print("=" * 80)
+        print(f"Database config: {args.config}")
+        print(f"Benchmark config: {benchmark_path}")
+        print(f"Dataset filter:  {args.dataset or 'all'}")
+        print(f"Index filter:    {args.indexes or 'all'}")
+        print(f"Output:          {args.output}")
+        print("=" * 80)
+
+        run_with_config(
+            config=config,
+            benchmark_config=benchmark_config,
+            dataset_filter=args.dataset,
+            indexes_filter=indexes_filter,
+            output_dir=args.output,
+            container_name=args.container,
+        )
+
+    elif args.database:
+        # Legacy mode
+        if not args.dataset:
+            print("Error: --dataset is required in legacy mode")
+            sys.exit(1)
+        run_legacy(args)
+
+    else:
+        # No mode specified
+        parser.print_help()
+        print("\nError: Either --config (recommended) or --database must be specified")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

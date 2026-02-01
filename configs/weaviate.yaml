@@ -1,0 +1,28 @@
+# Weaviate Configuration
+# Placeholder - update with actual Weaviate settings
+database:
+  name: weaviate
+  version: "1.23.0"
+  endpoint: http://localhost:8080
+
+container:
+  image: semitechnologies/weaviate:latest
+  cpus: 4
+  memory: 8g
+  ports:
+    - "8080:8080"
+    - "50051:50051"
+  env:
+    QUERY_DEFAULTS_LIMIT: "25"
+    AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+    PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+    DEFAULT_VECTORIZER_MODULE: "none"
+  volumes:
+    - weaviate-data:/var/lib/weaviate
+
+# Weaviate-specific parameters
+params:
+  # Request timeout
+  timeout: 30
+  # Batch size for imports
+  batch_size: 100

@@ -1,0 +1,26 @@
+# Milvus Configuration
+# Placeholder - update with actual Milvus settings
+database:
+  name: milvus
+  version: "2.3.0"
+  endpoint: localhost:19530
+
+container:
+  image: milvusdb/milvus:latest
+  cpus: 4
+  memory: 8g
+  ports:
+    - "19530:19530"
+    - "9091:9091"
+  env:
+    ETCD_ENDPOINTS: etcd:2379
+    MINIO_ADDRESS: minio:9000
+  volumes:
+    - milvus-data:/var/lib/milvus
+
+# Milvus-specific parameters
+params:
+  # Connection timeout
+  timeout: 30
+  # Consistency level
+  consistency_level: Strong
