@@ -138,8 +138,15 @@ class PGVectorClient(BaseVectorDBClient):
 
             # Create index based on type
             if index_config.index_type == "hnsw":
-                m = index_config.params.get("M", 16)
-                ef_construction = index_config.params.get("efConstruction", 64)
+                # Explicitly validate and cast to int for SQL safety
+                m = int(index_config.params.get("M", 16))
+                ef_construction = int(index_config.params.get("efConstruction", 64))
+
+                # Validate reasonable ranges for HNSW parameters
+                if not (1 <= m <= 100):
+                    raise ValueError(f"HNSW M parameter must be between 1 and 100, got {m}")
+                if not (1 <= ef_construction <= 2000):
+                    raise ValueError(f"HNSW efConstruction must be between 1 and 2000, got {ef_construction}")
 
                 # Create HNSW index with L2 distance
                 self._cursor.execute(
@@ -238,6 +245,9 @@ class PGVectorClient(BaseVectorDBClient):
         # Set ef_search for HNSW index if applicable
         if search_config.index_type == "hnsw":
             ef_search = int(search_config.params.get("efSearch", 64))
+            # Validate ef_search is within reasonable bounds
+            if not (1 <= ef_search <= 2000):
+                raise ValueError(f"HNSW efSearch must be between 1 and 2000, got {ef_search}")
             self._cursor.execute("SET hnsw.ef_search = %s", (ef_search,))
 
         try:
