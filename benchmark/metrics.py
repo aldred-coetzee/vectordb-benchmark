@@ -26,6 +26,9 @@ def calculate_recall_at_k(
     Returns:
         Mean recall@k across all queries (float between 0 and 1)
     """
+    if k <= 0:
+        raise ValueError(f"k must be positive, got {k}")
+
     if len(retrieved_ids) != len(ground_truth_ids):
         raise ValueError(
             f"Number of queries mismatch: {len(retrieved_ids)} vs {len(ground_truth_ids)}"

@@ -220,8 +220,10 @@ def run_single_benchmark(
 
             # Run benchmark
             try:
-                runner = BenchmarkRunner(client, sift_dataset, monitor)
-                runner.batch_size = batch_size
+                runner = BenchmarkRunner(
+                    client, sift_dataset, monitor,
+                    batch_size=batch_size,
+                )
 
                 hnsw_config = indexes_config.get("hnsw", {})
                 ef_search_values = hnsw_config.get("efSearch", [8, 16, 32, 64, 128, 256])
