@@ -166,6 +166,16 @@ class SIFTDataset:
             "ground_truth_k": self.ground_truth.shape[1],
         }
 
+    def load_base_vectors(self) -> None:
+        """
+        Explicitly load base vectors into memory.
+
+        This triggers lazy loading of the base vectors if not already loaded.
+        Useful for ensuring data is loaded before timing-sensitive operations.
+        """
+        # Access the property to trigger lazy loading
+        _ = self.base_vectors
+
     def get_batches(
         self, batch_size: int = 50000
     ) -> Iterator[Tuple[int, np.ndarray, np.ndarray]]:

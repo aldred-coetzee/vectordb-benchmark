@@ -1,11 +1,15 @@
 """Docker container resource monitoring."""
 
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Optional
 
 import docker
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 from docker.models.containers import Container
 
 
@@ -154,6 +158,7 @@ class DockerMonitor:
         self._samples = []
 
         def monitor_loop():
+            consecutive_errors = 0
             while not self._stop_event.is_set():
                 try:
                     stats = self.get_stats()
@@ -161,8 +166,16 @@ class DockerMonitor:
                         # Check again after getting stats in case stop was called
                         if not self._stop_event.is_set():
                             self._samples.append(stats)
-                except Exception:
-                    pass
+                    consecutive_errors = 0  # Reset on success
+                except Exception as e:
+                    consecutive_errors += 1
+                    # Log first error and periodic errors to avoid log spam
+                    if consecutive_errors == 1 or consecutive_errors % 10 == 0:
+                        logger.debug(
+                            "Error collecting container stats (count=%d): %s",
+                            consecutive_errors,
+                            e,
+                        )
                 # Use wait instead of sleep for faster response to stop
                 self._stop_event.wait(timeout=interval_seconds)
 

@@ -231,7 +231,17 @@ def plot_recall_vs_qps(
     ax.set_ylabel("Queries Per Second (QPS)", fontsize=12)
     ax.set_title(title, fontsize=14)
     ax.set_yscale("log")  # Log scale for QPS
-    ax.set_xlim(0.7, 1.02)
+
+    # Dynamically set x-axis limits based on data with some padding
+    all_recalls = [r.recall_at_10 for r in results]
+    if all_recalls:
+        min_recall = min(all_recalls)
+        # Set lower bound to be 10% below min recall, but at least 0
+        lower_bound = max(0, min_recall - 0.1)
+        ax.set_xlim(lower_bound, 1.02)
+    else:
+        ax.set_xlim(0.7, 1.02)
+
     ax.grid(True, alpha=0.3)
     ax.legend()
 
