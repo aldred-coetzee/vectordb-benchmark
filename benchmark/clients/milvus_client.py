@@ -33,6 +33,7 @@ class MilvusClient(BaseVectorDBClient):
 
         self._connection_alias = "default"
         self._index_configs: Dict[str, IndexConfig] = {}
+        self._loaded_collections: set = set()  # Track loaded collections
 
     @property
     def name(self) -> str:
@@ -74,6 +75,7 @@ class MilvusClient(BaseVectorDBClient):
     def disconnect(self) -> None:
         """Disconnect from Milvus."""
         self._index_configs.clear()
+        self._loaded_collections.clear()
         try:
             connections.disconnect(self._connection_alias)
         except Exception:
@@ -153,6 +155,7 @@ class MilvusClient(BaseVectorDBClient):
             pass
 
         self._index_configs.pop(table_name, None)
+        self._loaded_collections.discard(table_name)
 
     def insert(
         self,
@@ -208,8 +211,10 @@ class MilvusClient(BaseVectorDBClient):
         try:
             collection = Collection(table_name)
 
-            # Ensure collection is loaded
-            collection.load()
+            # Only load collection if not already loaded (expensive operation)
+            if table_name not in self._loaded_collections:
+                collection.load()
+                self._loaded_collections.add(table_name)
 
             # Build search parameters
             if search_config.index_type == "flat":
