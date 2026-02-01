@@ -17,6 +17,7 @@ NC='\033[0m' # No Color
 QDRANT_CONTAINER="qdrant-benchmark"
 PGVECTOR_CONTAINER="pgvector-benchmark"
 KDBAI_CONTAINER="kdbai-benchmark"
+WEAVIATE_CONTAINER="weaviate-benchmark"
 
 # Default resource limits (can be overridden via environment variables)
 MEMORY_LIMIT="${MEMORY_LIMIT:-8g}"
@@ -234,6 +235,36 @@ setup_kdbai() {
     print_success "KDB.AI is running on http://localhost:8082"
 }
 
+# Setup Weaviate
+setup_weaviate() {
+    print_header "Setting up Weaviate"
+
+    cleanup_container "$WEAVIATE_CONTAINER"
+
+    print_info "Pulling Weaviate image..."
+    docker pull semitechnologies/weaviate:latest
+
+    print_info "Starting Weaviate container..."
+    docker run -d \
+        --name "$WEAVIATE_CONTAINER" \
+        -p 8080:8080 \
+        -p 50051:50051 \
+        --memory="$MEMORY_LIMIT" \
+        --cpus="$CPU_LIMIT" \
+        -e QUERY_DEFAULTS_LIMIT=25 \
+        -e AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true \
+        -e PERSISTENCE_DATA_PATH='/var/lib/weaviate' \
+        -e DEFAULT_VECTORIZER_MODULE='none' \
+        -e CLUSTER_HOSTNAME='node1' \
+        -v weaviate_data:/var/lib/weaviate \
+        semitechnologies/weaviate:latest
+
+    # Wait for Weaviate to be ready
+    wait_for_container "$WEAVIATE_CONTAINER" "curl -s http://localhost:8080/v1/.well-known/ready"
+
+    print_success "Weaviate is running on http://localhost:8080"
+}
+
 # Show status of all containers
 show_status() {
     print_header "Container Status"
@@ -241,7 +272,7 @@ show_status() {
     echo "Database Containers:"
     echo "-------------------"
 
-    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER"; do
+    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER"; do
         if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
             status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null)
             print_success "$container: $status"
@@ -258,7 +289,7 @@ show_status() {
 stop_all() {
     print_header "Stopping All Containers"
 
-    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER"; do
+    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER"; do
         if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
             print_info "Stopping $container..."
             docker stop "$container" &> /dev/null
@@ -271,12 +302,12 @@ stop_all() {
 cleanup_all() {
     print_header "Cleaning Up All Containers and Volumes"
 
-    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER"; do
+    for container in "$QDRANT_CONTAINER" "$PGVECTOR_CONTAINER" "$KDBAI_CONTAINER" "$WEAVIATE_CONTAINER"; do
         cleanup_container "$container"
     done
 
     print_info "Removing volumes..."
-    docker volume rm qdrant_storage pgvector_data kdbai_data 2>/dev/null || true
+    docker volume rm qdrant_storage pgvector_data kdbai_data weaviate_data 2>/dev/null || true
 
     print_success "Cleanup complete"
 }
@@ -299,6 +330,10 @@ print_usage_examples() {
     echo "python run_benchmark.py --database kdbai --dataset datasets/sift \\"
     echo "    --container $KDBAI_CONTAINER --endpoint http://localhost:8082"
     echo ""
+    echo "# Benchmark Weaviate:"
+    echo "python run_benchmark.py --database weaviate --dataset datasets/sift \\"
+    echo "    --container $WEAVIATE_CONTAINER --endpoint http://localhost:8080"
+    echo ""
     echo "# Benchmark FAISS (no Docker needed):"
     echo "python run_benchmark.py --database faiss --dataset datasets/sift"
     echo ""
@@ -315,6 +350,7 @@ main() {
             check_docker
             setup_qdrant
             setup_pgvector
+            setup_weaviate
             setup_kdbai
             show_status
             print_usage_examples
@@ -326,6 +362,10 @@ main() {
         pgvector)
             check_docker
             setup_pgvector
+            ;;
+        weaviate)
+            check_docker
+            setup_weaviate
             ;;
         kdbai)
             check_docker
@@ -349,6 +389,7 @@ main() {
             echo "  all       Setup all databases (default)"
             echo "  qdrant    Setup only Qdrant"
             echo "  pgvector  Setup only pgvector (PostgreSQL)"
+            echo "  weaviate  Setup only Weaviate"
             echo "  kdbai     Setup only KDB.AI (requires license)"
             echo "  status    Show status of all containers"
             echo "  stop      Stop all benchmark containers"
@@ -364,6 +405,7 @@ main() {
             echo "Examples:"
             echo "  $0                              # Setup all databases"
             echo "  $0 qdrant                       # Setup only Qdrant"
+            echo "  $0 weaviate                     # Setup only Weaviate"
             echo "  MEMORY_LIMIT=16g $0             # Setup with 16GB memory limit"
             echo ""
             echo "KDB.AI Setup (requires license from https://kdb.ai/):"
