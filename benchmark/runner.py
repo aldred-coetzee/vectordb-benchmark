@@ -67,6 +67,9 @@ class BenchmarkRunner:
         client: BaseVectorDBClient,
         dataset: SIFTDataset,
         monitor: Optional[DockerMonitor] = None,
+        batch_size: int = 50000,
+        warmup_queries: int = 100,
+        k_values: Optional[List[int]] = None,
     ):
         """
         Initialize the benchmark runner.
@@ -75,13 +78,16 @@ class BenchmarkRunner:
             client: Vector database client
             dataset: SIFT dataset loader
             monitor: Optional Docker monitor for resource tracking
+            batch_size: Number of vectors per insertion batch
+            warmup_queries: Number of warmup queries before timing
+            k_values: List of k values for recall calculation (default: [10, 100])
         """
         self.client = client
         self.dataset = dataset
         self.monitor = monitor
-        self.batch_size = 50000
-        self.warmup_queries = 10000
-        self.k_values = [10, 100]
+        self.batch_size = batch_size
+        self.warmup_queries = warmup_queries
+        self.k_values = k_values if k_values is not None else [10, 100]
 
     def run_ingest_benchmark(
         self,
@@ -192,6 +198,10 @@ class BenchmarkRunner:
         ground_truth = self.dataset.ground_truth
         num_queries = len(queries)
         k = max(self.k_values)  # Search for max k
+
+        # Validate we have query vectors
+        if num_queries == 0:
+            raise ValueError("No query vectors available - cannot run search benchmark")
 
         # Warmup queries
         print(f"    Running {self.warmup_queries} warmup queries...")

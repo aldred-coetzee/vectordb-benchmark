@@ -136,9 +136,17 @@ class KDBAIClient(BaseVectorDBClient):
             table = self._database.table(table_name)
             table.drop()
             print(f"Dropped table '{table_name}'")
-        except Exception:
+        except (KeyError, ValueError) as e:
             # Table doesn't exist, which is fine
             pass
+        except Exception as e:
+            # Check if error message indicates table not found
+            error_msg = str(e).lower()
+            if "not found" in error_msg or "does not exist" in error_msg or "no such" in error_msg:
+                pass  # Table doesn't exist, which is fine
+            else:
+                # Re-raise unexpected errors
+                raise RuntimeError(f"Failed to drop table '{table_name}': {e}")
 
         # Clean up local references
         self._tables.pop(table_name, None)

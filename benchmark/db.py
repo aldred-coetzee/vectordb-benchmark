@@ -128,9 +128,18 @@ class BenchmarkDatabase:
         conn.commit()
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Get or create a database connection."""
+        """Get or create a database connection.
+
+        Note: Uses check_same_thread=False to allow access from multiple threads.
+        The benchmark runner may access the database from different threads
+        (e.g., main thread and monitoring thread), so we need to allow this.
+        SQLite itself handles thread safety at the database level.
+        """
         if self._conn is None:
-            self._conn = sqlite3.connect(str(self.db_path))
+            self._conn = sqlite3.connect(
+                str(self.db_path),
+                check_same_thread=False,
+            )
             self._conn.row_factory = sqlite3.Row
         return self._conn
 
@@ -146,12 +155,12 @@ class BenchmarkDatabase:
         dataset: str,
         vector_count: int,
         dimensions: int,
-        db_version: str = None,
-        cpus: float = None,
-        memory_gb: float = None,
-        config: Dict[str, Any] = None,
-        benchmark_config: Dict[str, Any] = None,
-        notes: str = None,
+        db_version: Optional[str] = None,
+        cpus: Optional[float] = None,
+        memory_gb: Optional[float] = None,
+        config: Optional[Dict[str, Any]] = None,
+        benchmark_config: Optional[Dict[str, Any]] = None,
+        notes: Optional[str] = None,
     ) -> int:
         """
         Create a new benchmark run record.
@@ -198,8 +207,8 @@ class BenchmarkDatabase:
         self,
         run_id: int,
         result: IngestResult,
-        index_config: Dict[str, Any] = None,
-        batch_size: int = None,
+        index_config: Optional[Dict[str, Any]] = None,
+        batch_size: Optional[int] = None,
     ) -> int:
         """
         Save an ingest benchmark result.
@@ -236,7 +245,7 @@ class BenchmarkDatabase:
         self,
         run_id: int,
         result: SearchResult,
-        num_queries: int = None,
+        num_queries: Optional[int] = None,
     ) -> int:
         """
         Save a search benchmark result.
@@ -279,8 +288,8 @@ class BenchmarkDatabase:
         self,
         run_id: int,
         phase: str,
-        cpu_pct: float = None,
-        memory_gb: float = None,
+        cpu_pct: Optional[float] = None,
+        memory_gb: Optional[float] = None,
     ) -> int:
         """
         Save a resource utilization sample.
@@ -311,11 +320,11 @@ class BenchmarkDatabase:
     def save_benchmark_results(
         self,
         results: BenchmarkResults,
-        config: Dict[str, Any] = None,
-        benchmark_config: Dict[str, Any] = None,
-        batch_size: int = None,
-        num_queries: int = None,
-        db_version: str = None,
+        config: Optional[Dict[str, Any]] = None,
+        benchmark_config: Optional[Dict[str, Any]] = None,
+        batch_size: Optional[int] = None,
+        num_queries: Optional[int] = None,
+        db_version: Optional[str] = None,
     ) -> int:
         """
         Save complete benchmark results to the database.
@@ -369,9 +378,9 @@ class BenchmarkDatabase:
 
     def get_runs(
         self,
-        database: str = None,
-        dataset: str = None,
-        limit: int = None,
+        database: Optional[str] = None,
+        dataset: Optional[str] = None,
+        limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get benchmark runs, optionally filtered.
@@ -409,7 +418,7 @@ class BenchmarkDatabase:
 
         return [dict(row) for row in rows]
 
-    def get_run_details(self, run_id: int) -> Dict[str, Any]:
+    def get_run_details(self, run_id: int) -> Optional[Dict[str, Any]]:
         """
         Get complete details for a specific run.
 
@@ -457,7 +466,7 @@ class BenchmarkDatabase:
     def get_comparison(
         self,
         database_names: List[str],
-        dataset: str = None,
+        dataset: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Get comparison data for multiple databases.

@@ -188,6 +188,7 @@ def run_with_config(
     search_config = benchmark_config.get("search", {})
     batch_size = search_config.get("batch_size", 50000)
     num_queries = search_config.get("num_queries", 10000)
+    warmup_queries = search_config.get("warmup", 100)
 
     # Determine which datasets to run
     datasets_config = benchmark_config.get("datasets", {})
@@ -297,8 +298,11 @@ def run_with_config(
 
             # Run benchmark
             try:
-                runner = BenchmarkRunner(client, dataset, monitor)
-                runner.batch_size = batch_size
+                runner = BenchmarkRunner(
+                    client, dataset, monitor,
+                    batch_size=batch_size,
+                    warmup_queries=warmup_queries,
+                )
 
                 # Run the benchmark with filtered indexes
                 results = runner.run_full_benchmark(
@@ -458,8 +462,11 @@ def run_legacy(args: argparse.Namespace) -> None:
 
     # Run benchmark
     try:
-        runner = BenchmarkRunner(client, dataset, monitor)
-        runner.batch_size = args.batch_size
+        runner = BenchmarkRunner(
+            client, dataset, monitor,
+            batch_size=args.batch_size,
+            warmup_queries=100,  # Default warmup for legacy mode
+        )
 
         results = runner.run_full_benchmark(
             hnsw_ef_search_values=args.ef_search,

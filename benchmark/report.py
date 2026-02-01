@@ -88,7 +88,6 @@ def print_console_report(results: BenchmarkResults) -> None:
 def save_ingest_csv(
     results: List[IngestResult],
     output_path: str,
-    metadata: dict = None,
 ) -> None:
     """
     Save ingest results to CSV.
@@ -96,7 +95,6 @@ def save_ingest_csv(
     Args:
         results: List of ingest results
         output_path: Path to output CSV file
-        metadata: Optional metadata to include
     """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -133,7 +131,6 @@ def save_ingest_csv(
 def save_search_csv(
     results: List[SearchResult],
     output_path: str,
-    metadata: dict = None,
 ) -> None:
     """
     Save search results to CSV.
@@ -141,7 +138,6 @@ def save_search_csv(
     Args:
         results: List of search results
         output_path: Path to output CSV file
-        metadata: Optional metadata to include
     """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -264,24 +260,15 @@ def generate_full_report(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Metadata for CSV files
-    metadata = {
-        "database": results.database_name,
-        "timestamp": results.timestamp,
-        "dataset": results.dataset_info["name"],
-    }
-
     # Save CSVs
     save_ingest_csv(
         results.ingest_results,
         str(output_path / "benchmark_ingest.csv"),
-        metadata,
     )
 
     save_search_csv(
         results.search_results,
         str(output_path / "benchmark_search.csv"),
-        metadata,
     )
 
     # Generate plot

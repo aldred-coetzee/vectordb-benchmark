@@ -7,6 +7,7 @@ import numpy as np
 
 try:
     from qdrant_client import QdrantClient as QdrantSDK
+    from qdrant_client.http.exceptions import UnexpectedResponse
     from qdrant_client.models import (
         Distance,
         HnswConfigDiff,
@@ -16,6 +17,7 @@ try:
     )
 except ImportError:
     QdrantSDK = None
+    UnexpectedResponse = None
 
 from .base import BaseVectorDBClient, IndexConfig, SearchConfig, SearchResult
 
@@ -134,9 +136,19 @@ class QdrantClient(BaseVectorDBClient):
         try:
             self._client.delete_collection(table_name)
             print(f"Dropped table '{table_name}'")
-        except Exception:
-            # Collection doesn't exist, which is fine
-            pass
+        except UnexpectedResponse as e:
+            # Collection doesn't exist (404), which is fine
+            if e.status_code == 404:
+                pass
+            else:
+                raise RuntimeError(f"Failed to drop collection '{table_name}': {e}")
+        except Exception as e:
+            # Check if error message indicates collection not found
+            error_msg = str(e).lower()
+            if "not found" in error_msg or "does not exist" in error_msg:
+                pass  # Collection doesn't exist, which is fine
+            else:
+                raise RuntimeError(f"Failed to drop collection '{table_name}': {e}")
 
         self._index_configs.pop(table_name, None)
 

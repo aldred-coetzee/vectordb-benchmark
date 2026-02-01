@@ -69,7 +69,7 @@ class DockerMonitor:
         self.container_name = container_name
         self._client: Optional[docker.DockerClient] = None
         self._container: Optional[Container] = None
-        self._monitoring = False
+        self._stop_event = threading.Event()
         self._monitor_thread: Optional[threading.Thread] = None
         self._samples: list = []
         self._lock = threading.Lock()
@@ -146,21 +146,25 @@ class DockerMonitor:
         Args:
             interval_seconds: Time between samples
         """
-        if self._monitoring:
+        # Check if already monitoring
+        if self._monitor_thread is not None and self._monitor_thread.is_alive():
             return
 
-        self._monitoring = True
+        self._stop_event.clear()
         self._samples = []
 
         def monitor_loop():
-            while self._monitoring:
+            while not self._stop_event.is_set():
                 try:
                     stats = self.get_stats()
                     with self._lock:
-                        self._samples.append(stats)
+                        # Check again after getting stats in case stop was called
+                        if not self._stop_event.is_set():
+                            self._samples.append(stats)
                 except Exception:
                     pass
-                time.sleep(interval_seconds)
+                # Use wait instead of sleep for faster response to stop
+                self._stop_event.wait(timeout=interval_seconds)
 
         self._monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
         self._monitor_thread.start()
@@ -172,10 +176,16 @@ class DockerMonitor:
         Returns:
             MonitoringResult with peak/avg statistics
         """
-        self._monitoring = False
+        # Signal the thread to stop
+        self._stop_event.set()
 
-        if self._monitor_thread:
-            self._monitor_thread.join(timeout=2.0)
+        if self._monitor_thread is not None:
+            # Wait longer for thread to finish (Docker stats can take time)
+            self._monitor_thread.join(timeout=5.0)
+            if self._monitor_thread.is_alive():
+                # Thread is still running, but we've signaled it to stop
+                # It will terminate on next iteration
+                pass
             self._monitor_thread = None
 
         with self._lock:
