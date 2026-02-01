@@ -2,6 +2,7 @@
 
 import os
 import re
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass
@@ -365,20 +366,31 @@ class DockerManager:
             return False
 
     def _check_health_command(self, command: str) -> bool:
-        """Check health via shell command."""
+        """Check health via shell command.
+
+        Uses shlex.split() to safely parse the command into arguments,
+        avoiding shell injection vulnerabilities.
+        """
         try:
             # Expand container name in command
             if self._container_config:
                 command = command.replace("${CONTAINER}", self._container_config.name)
 
+            # Parse command safely into list of arguments
+            cmd_args = shlex.split(command)
+
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd_args,
+                shell=False,
                 capture_output=True,
                 timeout=10,
             )
             return result.returncode == 0
         except subprocess.TimeoutExpired:
+            return False
+        except ValueError as e:
+            # shlex.split() can raise ValueError for malformed strings
+            print(f"  Warning: Invalid health check command format: {e}")
             return False
         except Exception:
             return False
