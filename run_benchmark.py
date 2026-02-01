@@ -40,10 +40,13 @@ def get_client(database: str):
     elif database.lower() == "weaviate":
         from benchmark.clients.weaviate_client import WeaviateClient
         return WeaviateClient()
+    elif database.lower() == "milvus":
+        from benchmark.clients.milvus_client import MilvusClient
+        return MilvusClient()
     else:
         raise ValueError(
             f"Unsupported database: {database}. "
-            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate"
+            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate, milvus"
         )
 
 
@@ -68,8 +71,8 @@ Examples:
     parser.add_argument(
         "--database", "-d",
         required=True,
-        choices=["kdbai", "faiss", "qdrant", "pgvector", "weaviate"],
-        help="Database to benchmark (kdbai, faiss, qdrant, pgvector, or weaviate)",
+        choices=["kdbai", "faiss", "qdrant", "pgvector", "weaviate", "milvus"],
+        help="Database to benchmark (kdbai, faiss, qdrant, pgvector, weaviate, or milvus)",
     )
 
     parser.add_argument(
@@ -87,7 +90,7 @@ Examples:
     parser.add_argument(
         "--endpoint", "-e",
         default=None,
-        help="Database endpoint URL (default: kdbai=:8082, qdrant=:6333, pgvector=:5432, weaviate=:8080)",
+        help="Database endpoint URL (default: kdbai=:8082, qdrant=:6333, pgvector=:5432, weaviate=:8080, milvus=:19530)",
     )
 
     parser.add_argument(
@@ -152,6 +155,8 @@ Examples:
             args.endpoint = "localhost:5432"
         elif args.database.lower() == "weaviate":
             args.endpoint = "http://localhost:8080"
+        elif args.database.lower() == "milvus":
+            args.endpoint = "localhost:19530"
         else:
             args.endpoint = "http://localhost:8080"
 

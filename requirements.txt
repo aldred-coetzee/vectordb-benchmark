@@ -8,3 +8,4 @@ qdrant-client>=1.7.0
 psycopg2-binary>=2.9.0
 pgvector>=0.2.0
 weaviate-client>=4.0.0
+pymilvus>=2.3.0
