@@ -190,6 +190,11 @@ def plot_recall_vs_qps(
         output_path: Path to save the plot
         title: Plot title
     """
+    # Early return if no results to plot
+    if not results:
+        print("No search results to plot, skipping plot generation")
+        return
+
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 

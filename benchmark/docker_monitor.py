@@ -195,11 +195,11 @@ class DockerMonitor:
         if self._monitor_thread is not None:
             # Wait longer for thread to finish (Docker stats can take time)
             self._monitor_thread.join(timeout=5.0)
-            if self._monitor_thread.is_alive():
-                # Thread is still running, but we've signaled it to stop
-                # It will terminate on next iteration
-                pass
-            self._monitor_thread = None
+            # Only clear thread reference if it actually terminated
+            # to prevent start_monitoring from creating a new thread
+            # while the old one is still running
+            if not self._monitor_thread.is_alive():
+                self._monitor_thread = None
 
         with self._lock:
             samples = self._samples.copy()

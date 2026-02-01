@@ -2,6 +2,7 @@
 
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -304,7 +305,6 @@ class BenchmarkRunner:
         indexes_to_run = [idx.lower() for idx in indexes_to_run]
 
         # Get timestamp
-        from datetime import datetime
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Get Docker limits if monitor is available
