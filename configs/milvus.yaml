@@ -18,6 +18,15 @@ container:
   volumes:
     - milvus-data:/var/lib/milvus
 
+# Placeholder - requires external dependencies (etcd, minio)
+placeholder: true
+
+# Health check configuration (placeholder)
+health_check:
+  url: http://localhost:9091/healthz
+  timeout: 60
+  interval: 2
+
 # Milvus-specific parameters
 params:
   # Connection timeout

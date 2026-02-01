@@ -122,6 +122,8 @@ def run_with_config(
     indexes_filter: Optional[List[str]],
     output_dir: str,
     container_name: Optional[str],
+    skip_docker: bool = False,
+    keep_container: bool = False,
 ) -> None:
     """
     Run benchmark using YAML configuration.
@@ -133,9 +135,12 @@ def run_with_config(
         indexes_filter: Optional list of index types to run (None = all)
         output_dir: Directory for output files
         container_name: Optional Docker container name for monitoring
+        skip_docker: If True, skip Docker container management (use existing)
+        keep_container: If True, don't stop container after benchmark
     """
     from benchmark.data_loader import SIFTDataset
     from benchmark.docker_monitor import DockerMonitor
+    from benchmark.docker_manager import DockerManager
     from benchmark.runner import BenchmarkRunner
     from benchmark.report import generate_full_report
     from benchmark.db import BenchmarkDatabase
@@ -160,6 +165,24 @@ def run_with_config(
             pass
     elif isinstance(memory, (int, float)):
         memory_gb = float(memory)
+
+    # Initialize Docker manager
+    docker_manager = None
+    if database_name.lower() != "faiss" and container_config:
+        docker_manager = DockerManager(config, database_name)
+
+        if not skip_docker and docker_manager.has_container:
+            # Start container
+            try:
+                docker_manager.start_container()
+                if not docker_manager.wait_for_ready():
+                    print("Error: Container failed to become ready")
+                    sys.exit(1)
+            except Exception as e:
+                print(f"Error starting container: {e}")
+                sys.exit(1)
+        elif skip_docker:
+            print("Skipping Docker container management (--skip-docker)")
 
     # Extract search settings from benchmark config
     search_config = benchmark_config.get("search", {})
@@ -191,136 +214,154 @@ def run_with_config(
         requested_indexes = all_indexes
 
     # Initialize database client
-    print(f"\nConnecting to {database_name}...")
+    client = None
+    db = None
+
     try:
-        client = get_client(database_name)
-        if endpoint:
-            client.connect(endpoint=endpoint)
-        else:
-            client.connect()
-    except Exception as e:
-        print(f"Error connecting to database: {e}")
-        sys.exit(1)
-
-    # Filter indexes by what the client supports
-    supported = get_supported_indexes(client)
-    indexes_to_run = filter_indexes(requested_indexes, supported, database_name)
-
-    if not indexes_to_run:
-        print("Error: No valid indexes to run after filtering")
-        client.disconnect()
-        sys.exit(1)
-
-    print(f"Indexes to run: {indexes_to_run}")
-
-    # Initialize SQLite database
-    db = BenchmarkDatabase()
-
-    # Run benchmarks for each dataset
-    for dataset_name, dataset_info in datasets_to_run.items():
-        dataset_path = Path(dataset_info.get("path", f"datasets/{dataset_name}"))
-
-        # Validate dataset exists
-        if not dataset_path.exists():
-            print(f"Warning: Dataset path not found: {dataset_path}, skipping")
-            continue
-
-        # Check for required files
-        required_files = ["sift_base.fvecs", "sift_query.fvecs", "sift_groundtruth.ivecs"]
-        missing_files = [f for f in required_files if not (dataset_path / f).exists()]
-        if missing_files:
-            print(f"Warning: Missing files in {dataset_path}: {missing_files}, skipping")
-            continue
-
-        print(f"\n{'='*80}")
-        print(f"BENCHMARKING: {database_name} with {dataset_name} dataset")
-        print(f"{'='*80}")
-
-        # Load dataset
-        print("\nLoading dataset...")
+        print(f"\nConnecting to {database_name}...")
         try:
-            dataset = SIFTDataset(str(dataset_path))
-            _ = dataset.dimensions
-            print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
+            client = get_client(database_name)
+            if endpoint:
+                client.connect(endpoint=endpoint)
+            else:
+                client.connect()
         except Exception as e:
-            print(f"Error loading dataset: {e}, skipping")
-            continue
+            print(f"Error connecting to database: {e}")
+            raise
 
-        # Initialize Docker monitor
-        monitor = None
-        if database_name.lower() == "faiss":
-            print("\nFAISS runs in-process - skipping Docker container monitoring")
-        elif container_name:
-            print(f"\nConnecting to Docker container '{container_name}'...")
+        # Filter indexes by what the client supports
+        supported = get_supported_indexes(client)
+        indexes_to_run = filter_indexes(requested_indexes, supported, database_name)
+
+        if not indexes_to_run:
+            print("Error: No valid indexes to run after filtering")
+            raise RuntimeError("No valid indexes to run after filtering")
+
+        print(f"Indexes to run: {indexes_to_run}")
+
+        # Initialize SQLite database
+        db = BenchmarkDatabase()
+
+        # Run benchmarks for each dataset
+        for dataset_name, dataset_info in datasets_to_run.items():
+            dataset_path = Path(dataset_info.get("path", f"datasets/{dataset_name}"))
+
+            # Validate dataset exists
+            if not dataset_path.exists():
+                print(f"Warning: Dataset path not found: {dataset_path}, skipping")
+                continue
+
+            # Check for required files
+            required_files = ["sift_base.fvecs", "sift_query.fvecs", "sift_groundtruth.ivecs"]
+            missing_files = [f for f in required_files if not (dataset_path / f).exists()]
+            if missing_files:
+                print(f"Warning: Missing files in {dataset_path}: {missing_files}, skipping")
+                continue
+
+            print(f"\n{'='*80}")
+            print(f"BENCHMARKING: {database_name} with {dataset_name} dataset")
+            print(f"{'='*80}")
+
+            # Load dataset
+            print("\nLoading dataset...")
             try:
-                monitor = DockerMonitor(container_name)
-                monitor.connect()
-                limits = monitor.get_container_limits()
-                print(f"  Memory limit: {limits.get('memory_limit_gb', 0):.1f} GB")
-                print(f"  CPU limit: {limits.get('cpu_limit', 0):.1f} cores")
+                dataset = SIFTDataset(str(dataset_path))
+                _ = dataset.dimensions
+                print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
             except Exception as e:
-                print(f"Warning: Could not connect to Docker container: {e}")
-                monitor = None
+                print(f"Error loading dataset: {e}, skipping")
+                continue
 
-        # Prepare index configs
-        hnsw_config = indexes_config.get("hnsw", {})
-        ef_search_values = hnsw_config.get("efSearch", [8, 16, 32, 64, 128, 256])
-
-        # Run benchmark
-        try:
-            runner = BenchmarkRunner(client, dataset, monitor)
-            runner.batch_size = batch_size
-
-            # Run the benchmark with filtered indexes
-            results = runner.run_full_benchmark(
-                hnsw_ef_search_values=ef_search_values,
-                indexes_to_run=indexes_to_run,
+            # Initialize Docker monitor
+            monitor = None
+            effective_container_name = container_name or (
+                docker_manager.container_name if docker_manager else None
             )
-
-            # Override Docker limits with config values if provided
-            if cpus > 0:
-                results.docker_cpu_limit = float(cpus)
-            if memory_gb > 0:
-                results.docker_memory_limit_gb = memory_gb
-
-            # Generate reports (CSV and console)
-            generate_full_report(results, output_dir)
-
-            # Save to SQLite
-            run_id = db.save_benchmark_results(
-                results=results,
-                config=config,
-                benchmark_config=benchmark_config,
-                batch_size=batch_size,
-                num_queries=num_queries,
-                db_version=db_version,
-            )
-            print(f"\nResults saved to SQLite (run_id: {run_id})")
-
-            print("\nBenchmark complete!")
-            print(f"Results saved to: {output_dir}/")
-
-        except KeyboardInterrupt:
-            print("\nBenchmark interrupted by user.")
-            break
-        except Exception as e:
-            print(f"\nError during benchmark: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            if monitor:
+            if database_name.lower() == "faiss":
+                print("\nFAISS runs in-process - skipping Docker container monitoring")
+            elif effective_container_name:
+                print(f"\nConnecting to Docker container '{effective_container_name}'...")
                 try:
-                    monitor.disconnect()
-                except Exception:
-                    pass
+                    monitor = DockerMonitor(effective_container_name)
+                    monitor.connect()
+                    limits = monitor.get_container_limits()
+                    print(f"  Memory limit: {limits.get('memory_limit_gb', 0):.1f} GB")
+                    print(f"  CPU limit: {limits.get('cpu_limit', 0):.1f} cores")
+                except Exception as e:
+                    print(f"Warning: Could not connect to Docker container: {e}")
+                    monitor = None
 
-    # Cleanup
-    print("\nCleaning up...")
-    try:
-        client.disconnect()
-    except Exception:
-        pass
-    db.close()
+            # Prepare index configs
+            hnsw_config = indexes_config.get("hnsw", {})
+            ef_search_values = hnsw_config.get("efSearch", [8, 16, 32, 64, 128, 256])
+
+            # Run benchmark
+            try:
+                runner = BenchmarkRunner(client, dataset, monitor)
+                runner.batch_size = batch_size
+
+                # Run the benchmark with filtered indexes
+                results = runner.run_full_benchmark(
+                    hnsw_ef_search_values=ef_search_values,
+                    indexes_to_run=indexes_to_run,
+                )
+
+                # Override Docker limits with config values if provided
+                if cpus > 0:
+                    results.docker_cpu_limit = float(cpus)
+                if memory_gb > 0:
+                    results.docker_memory_limit_gb = memory_gb
+
+                # Generate reports (CSV and console)
+                generate_full_report(results, output_dir)
+
+                # Save to SQLite
+                run_id = db.save_benchmark_results(
+                    results=results,
+                    config=config,
+                    benchmark_config=benchmark_config,
+                    batch_size=batch_size,
+                    num_queries=num_queries,
+                    db_version=db_version,
+                )
+                print(f"\nResults saved to SQLite (run_id: {run_id})")
+
+                print("\nBenchmark complete!")
+                print(f"Results saved to: {output_dir}/")
+
+            except KeyboardInterrupt:
+                print("\nBenchmark interrupted by user.")
+                break
+            except Exception as e:
+                print(f"\nError during benchmark: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                if monitor:
+                    try:
+                        monitor.disconnect()
+                    except Exception:
+                        pass
+
+    finally:
+        # Cleanup - always runs even if there's an error
+        print("\nCleaning up...")
+        if client:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+        if db:
+            db.close()
+
+        # Stop Docker container if we started it and --keep-container not specified
+        if docker_manager and docker_manager.has_container and not skip_docker and not keep_container:
+            docker_manager.stop_container()
+            docker_manager.close()
+        elif docker_manager:
+            if keep_container:
+                print(f"Keeping container '{docker_manager.container_name}' running (--keep-container)")
+            docker_manager.close()
 
 
 def run_legacy(args: argparse.Namespace) -> None:
@@ -559,6 +600,19 @@ Examples:
         help="Output directory for results (default: results)",
     )
 
+    # Docker management arguments
+    docker_group = parser.add_argument_group("Docker management")
+    docker_group.add_argument(
+        "--skip-docker",
+        action="store_true",
+        help="Skip Docker container management (use already-running container)",
+    )
+    docker_group.add_argument(
+        "--keep-container",
+        action="store_true",
+        help="Don't stop container after benchmark (useful for debugging)",
+    )
+
     args = parser.parse_args()
 
     # Determine which mode to run in
@@ -591,6 +645,8 @@ Examples:
         print(f"Dataset filter:  {args.dataset or 'all'}")
         print(f"Index filter:    {args.indexes or 'all'}")
         print(f"Output:          {args.output}")
+        print(f"Skip Docker:     {args.skip_docker}")
+        print(f"Keep container:  {args.keep_container}")
         print("=" * 80)
 
         run_with_config(
@@ -600,6 +656,8 @@ Examples:
             indexes_filter=indexes_filter,
             output_dir=args.output,
             container_name=args.container,
+            skip_docker=args.skip_docker,
+            keep_container=args.keep_container,
         )
 
     elif args.database:

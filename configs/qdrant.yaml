@@ -14,6 +14,12 @@ container:
   volumes:
     - qdrant-data:/qdrant/storage
 
+# Health check configuration
+health_check:
+  url: http://localhost:6333/readyz
+  timeout: 60
+  interval: 2
+
 # Qdrant-specific parameters
 params:
   # GRPC port for high-performance access
