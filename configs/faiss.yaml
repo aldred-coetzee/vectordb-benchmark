@@ -1,0 +1,15 @@
+# FAISS Configuration
+# FAISS is an in-process library, no container required
+database:
+  name: faiss
+  version: "1.7.4"
+  endpoint: null  # In-process, no network endpoint
+
+# No container section - FAISS runs in-process
+
+# FAISS-specific parameters
+params:
+  # Use GPU if available
+  use_gpu: false
+  # Number of threads for search
+  nthreads: 4

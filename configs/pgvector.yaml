@@ -1,0 +1,27 @@
+# PostgreSQL with pgvector Configuration
+database:
+  name: pgvector
+  version: "0.6.0"
+  endpoint: localhost:5432
+
+container:
+  image: ankane/pgvector
+  cpus: 4
+  memory: 8g
+  ports:
+    - "5432:5432"
+  env:
+    POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-benchmark}"
+    POSTGRES_USER: postgres
+    POSTGRES_DB: vectordb
+  volumes:
+    - pgvector-data:/var/lib/postgresql/data
+
+# pgvector-specific parameters
+params:
+  database: vectordb
+  user: postgres
+  password: benchmark
+  # Connection pool settings
+  min_connections: 1
+  max_connections: 10

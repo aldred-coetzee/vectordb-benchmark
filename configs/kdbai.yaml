@@ -1,0 +1,23 @@
+# KDB.AI Configuration
+database:
+  name: kdbai
+  version: "1.8.2"
+  endpoint: http://localhost:8082
+
+container:
+  image: ext-dev-registry.kxi-dev.kx.com/kdbai-db:1.8.2
+  cpus: 4
+  memory: 8g
+  ports:
+    - "8082:8082"
+    - "8081:8081"
+  env:
+    KDB_LICENSE_B64: "${KDB_LICENSE_B64}"
+    THREADS: "4"
+    VDB_DIR: "/data"
+  volumes:
+    - kdbai-data:/data
+
+# KDB.AI specific parameters
+params:
+  timeout: 30

@@ -270,18 +270,28 @@ class BenchmarkRunner:
     def run_full_benchmark(
         self,
         hnsw_ef_search_values: List[int] = None,
+        indexes_to_run: List[str] = None,
     ) -> BenchmarkResults:
         """
         Run the complete benchmark suite.
 
         Args:
             hnsw_ef_search_values: List of efSearch values to test for HNSW
+            indexes_to_run: List of index types to run (e.g., ['flat', 'hnsw']).
+                           If None, runs all indexes (flat and hnsw).
 
         Returns:
             BenchmarkResults with all metrics
         """
         if hnsw_ef_search_values is None:
             hnsw_ef_search_values = [8, 16, 32, 64, 128, 256]
+
+        # Default to running all indexes if not specified
+        if indexes_to_run is None:
+            indexes_to_run = ["flat", "hnsw"]
+
+        # Normalize index names to lowercase
+        indexes_to_run = [idx.lower() for idx in indexes_to_run]
 
         # Get timestamp
         from datetime import datetime
@@ -324,47 +334,58 @@ class BenchmarkRunner:
             },
         )
 
-        # Run Flat index benchmark
-        print("\n" + "=" * 80)
-        print("FLAT INDEX BENCHMARK")
-        print("=" * 80)
+        # Track which tables were created for cleanup
+        created_tables = []
 
-        flat_ingest = self.run_ingest_benchmark("benchmark_flat", flat_config)
-        results.ingest_results.append(flat_ingest)
+        # Run Flat index benchmark if requested
+        if "flat" in indexes_to_run:
+            print("\n" + "=" * 80)
+            print("FLAT INDEX BENCHMARK")
+            print("=" * 80)
 
-        flat_search_config = SearchConfig(
-            index_name="flat_index",
-            index_type="flat",
-            params={},
-        )
-        flat_search = self.run_search_benchmark("benchmark_flat", flat_search_config)
-        results.search_results.append(flat_search)
+            flat_ingest = self.run_ingest_benchmark("benchmark_flat", flat_config)
+            results.ingest_results.append(flat_ingest)
+            created_tables.append("benchmark_flat")
 
-        # Run HNSW index benchmark
-        print("\n" + "=" * 80)
-        print("HNSW INDEX BENCHMARK")
-        print("=" * 80)
-
-        hnsw_ingest = self.run_ingest_benchmark("benchmark_hnsw", hnsw_config)
-        results.ingest_results.append(hnsw_ingest)
-
-        # Test different efSearch values
-        print("\n  Testing different efSearch values...")
-        for ef_search in hnsw_ef_search_values:
-            hnsw_search_config = SearchConfig(
-                index_name="hnsw_index",
-                index_type="hnsw",
-                params={"efSearch": ef_search},
+            flat_search_config = SearchConfig(
+                index_name="flat_index",
+                index_type="flat",
+                params={},
             )
-            search_result = self.run_search_benchmark(
-                "benchmark_hnsw", hnsw_search_config
-            )
-            results.search_results.append(search_result)
+            flat_search = self.run_search_benchmark("benchmark_flat", flat_search_config)
+            results.search_results.append(flat_search)
+        else:
+            print("\nSkipping FLAT index benchmark (not in indexes_to_run)")
 
-        # Cleanup
+        # Run HNSW index benchmark if requested
+        if "hnsw" in indexes_to_run:
+            print("\n" + "=" * 80)
+            print("HNSW INDEX BENCHMARK")
+            print("=" * 80)
+
+            hnsw_ingest = self.run_ingest_benchmark("benchmark_hnsw", hnsw_config)
+            results.ingest_results.append(hnsw_ingest)
+            created_tables.append("benchmark_hnsw")
+
+            # Test different efSearch values
+            print("\n  Testing different efSearch values...")
+            for ef_search in hnsw_ef_search_values:
+                hnsw_search_config = SearchConfig(
+                    index_name="hnsw_index",
+                    index_type="hnsw",
+                    params={"efSearch": ef_search},
+                )
+                search_result = self.run_search_benchmark(
+                    "benchmark_hnsw", hnsw_search_config
+                )
+                results.search_results.append(search_result)
+        else:
+            print("\nSkipping HNSW index benchmark (not in indexes_to_run)")
+
+        # Cleanup only tables that were created
         print("\n" + "=" * 80)
         print("Cleaning up...")
-        self.client.drop_table("benchmark_flat")
-        self.client.drop_table("benchmark_hnsw")
+        for table_name in created_tables:
+            self.client.drop_table(table_name)
 
         return results
