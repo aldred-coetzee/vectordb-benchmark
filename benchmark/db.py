@@ -261,12 +261,13 @@ class BenchmarkDatabase:
         cursor = conn.cursor()
 
         # Extract efSearch from search_config if present
+        # Handles formats like "efSearch=64" or "-" (for flat index)
         ef_search = None
-        if result.search_config and result.search_config.startswith("efSearch="):
-            try:
-                ef_search = int(result.search_config.split("=")[1])
-            except (ValueError, IndexError):
-                pass
+        if result.search_config:
+            import re
+            match = re.search(r'efSearch=(\d+)', result.search_config)
+            if match:
+                ef_search = int(match.group(1))
 
         cursor.execute("""
             INSERT INTO search_results (

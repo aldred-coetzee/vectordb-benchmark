@@ -352,7 +352,23 @@ class DockerManager:
             return f"Error getting logs: {e}"
 
     def _check_health_url(self, url: str) -> bool:
-        """Check health via HTTP URL using curl."""
+        """Check health via HTTP URL.
+
+        Uses urllib as primary method with curl as fallback for broader compatibility.
+        """
+        # Try urllib first (no external dependency)
+        try:
+            import urllib.request
+            import urllib.error
+            req = urllib.request.Request(url, method='GET')
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return response.status == 200
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
+            pass
+        except Exception:
+            pass
+
+        # Fallback to curl if urllib fails (e.g., for some edge cases)
         try:
             result = subprocess.run(
                 ["curl", "-sf", url],
@@ -360,7 +376,7 @@ class DockerManager:
                 timeout=5,
             )
             return result.returncode == 0
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
         except Exception:
             return False

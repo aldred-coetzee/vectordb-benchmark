@@ -207,6 +207,13 @@ class BenchmarkRunner:
         if num_queries == 0:
             raise ValueError("No query vectors available - cannot run search benchmark")
 
+        # Validate ground truth matches query vectors
+        if len(ground_truth) != num_queries:
+            raise ValueError(
+                f"Ground truth count ({len(ground_truth)}) does not match "
+                f"query vector count ({num_queries})"
+            )
+
         # Warmup queries
         print(f"    Running {self.warmup_queries} warmup queries...")
         for i in range(min(self.warmup_queries, num_queries)):
