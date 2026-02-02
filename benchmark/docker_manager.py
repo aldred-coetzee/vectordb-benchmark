@@ -24,6 +24,31 @@ class HealthCheckConfig:
 
 
 @dataclass
+class SetupDirectory:
+    """Directory to create before container start."""
+
+    path: str
+    mode: Optional[str] = None
+
+
+@dataclass
+class SetupFile:
+    """File to create before container start."""
+
+    path: str
+    content: str
+    mode: Optional[str] = None
+
+
+@dataclass
+class SetupConfig:
+    """Pre-start setup configuration."""
+
+    directories: Optional[List[SetupDirectory]] = None
+    files: Optional[List[SetupFile]] = None
+
+
+@dataclass
 class ContainerConfig:
     """Container configuration parsed from YAML."""
 
@@ -36,6 +61,9 @@ class ContainerConfig:
     env: Optional[Dict[str, str]] = None
     volumes: Optional[List[str]] = None
     health_check: Optional[HealthCheckConfig] = None
+    security_opt: Optional[List[str]] = None
+    command: Optional[str] = None
+    setup: Optional[SetupConfig] = None
 
 
 class DockerManager:
@@ -80,6 +108,31 @@ class DockerManager:
                 interval=health_section.get("interval", 2),
             )
 
+        # Parse setup config
+        setup = None
+        setup_section = container_section.get("setup")
+        if setup_section:
+            directories = None
+            if setup_section.get("directories"):
+                directories = [
+                    SetupDirectory(
+                        path=d.get("path", d) if isinstance(d, dict) else d,
+                        mode=d.get("mode") if isinstance(d, dict) else None,
+                    )
+                    for d in setup_section["directories"]
+                ]
+            files = None
+            if setup_section.get("files"):
+                files = [
+                    SetupFile(
+                        path=f["path"],
+                        content=f["content"],
+                        mode=f.get("mode"),
+                    )
+                    for f in setup_section["files"]
+                ]
+            setup = SetupConfig(directories=directories, files=files)
+
         return ContainerConfig(
             image=container_section.get("image", ""),
             name=container_name,
@@ -90,6 +143,9 @@ class DockerManager:
             env=container_section.get("env"),
             volumes=container_section.get("volumes"),
             health_check=health_check,
+            security_opt=container_section.get("security_opt"),
+            command=container_section.get("command"),
+            setup=setup,
         )
 
     @property
@@ -124,12 +180,16 @@ class DockerManager:
         return re.sub(pattern, replace_var, value)
 
     def _expand_path(self, path: str) -> str:
-        """Expand ~ and environment variables in path."""
+        """Expand ~, relative paths, and environment variables in path."""
         # Expand ~ to home directory
         if path.startswith("~"):
             path = str(Path.home()) + path[1:]
         # Expand environment variables
-        return self._expand_env_vars(path)
+        path = self._expand_env_vars(path)
+        # Convert relative paths to absolute
+        if path.startswith(".") or (not path.startswith("/") and "/" in path):
+            path = str(Path(path).resolve())
+        return path
 
     def _prepare_environment(self) -> Dict[str, str]:
         """Prepare environment variables with expansion."""
@@ -158,8 +218,8 @@ class DockerManager:
                 mode = parts[2] if len(parts) > 2 else "rw"
 
                 # Check if it's a named volume or a bind mount
-                if "/" in host_path or host_path.startswith("~"):
-                    # It's a path, expand it
+                if "/" in host_path or host_path.startswith("~") or host_path.startswith("."):
+                    # It's a path, expand it to absolute path
                     host_path = self._expand_path(host_path)
                     result[host_path] = {"bind": container_path, "mode": mode}
                 else:
@@ -189,6 +249,34 @@ class DockerManager:
                 result[f"{port_num}/tcp"] = port_num
 
         return result
+
+    def _run_setup(self) -> None:
+        """Run pre-start setup: create directories and files."""
+        if not self._container_config or not self._container_config.setup:
+            return
+
+        setup = self._container_config.setup
+
+        # Create directories
+        if setup.directories:
+            for dir_config in setup.directories:
+                dir_path = Path(self._expand_path(dir_config.path))
+                if not dir_path.exists():
+                    print(f"  Creating directory: {dir_path}")
+                    dir_path.mkdir(parents=True, exist_ok=True)
+                if dir_config.mode:
+                    os.chmod(dir_path, int(dir_config.mode, 8))
+
+        # Create files
+        if setup.files:
+            for file_config in setup.files:
+                file_path = Path(self._expand_path(file_config.path))
+                # Ensure parent directory exists
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                print(f"  Creating file: {file_path}")
+                file_path.write_text(file_config.content)
+                if file_config.mode:
+                    os.chmod(file_path, int(file_config.mode, 8))
 
     def _connect_client(self) -> None:
         """Connect to Docker daemon if not already connected."""
@@ -223,6 +311,9 @@ class DockerManager:
 
         config = self._container_config
         print(f"\nStarting Docker container '{config.name}'...")
+
+        # Run pre-start setup (create directories and files)
+        self._run_setup()
 
         # Stop any existing container with same name
         self._stop_existing_container(config.name)
@@ -261,6 +352,14 @@ class DockerManager:
         volumes = self._prepare_volumes()
         if volumes:
             run_kwargs["volumes"] = volumes
+
+        # Add security options (e.g., seccomp:unconfined for Milvus)
+        if config.security_opt:
+            run_kwargs["security_opt"] = config.security_opt
+
+        # Add command (e.g., "milvus run standalone")
+        if config.command:
+            run_kwargs["command"] = config.command
 
         # Print configuration
         print(f"  Image: {config.image}")

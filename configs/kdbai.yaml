@@ -5,7 +5,7 @@ database:
   endpoint: http://localhost:8082
 
 container:
-  image: ext-dev-registry.kxi-dev.kx.com/kdbai-db:1.8.2
+  image: portal.dl.kx.com/kdbai-db
   cpus: 4
   memory: 8g
   ports:
@@ -14,9 +14,13 @@ container:
   env:
     KDB_LICENSE_B64: "${KDB_LICENSE_B64}"
     THREADS: "4"
-    VDB_DIR: "/data"
+    VDB_DIR: "/tmp/kx/data/vdb"
   volumes:
-    - kdbai-data:/data
+    - ./data/kdbai:/tmp/kx/data
+  setup:
+    directories:
+      - path: ./data/kdbai
+        mode: "0777"
 
 # Health check configuration
 health_check:

@@ -1,7 +1,7 @@
 # Milvus Configuration
 database:
   name: milvus
-  version: "2.6"
+  version: "latest"
   endpoint: localhost:19530
 
 container:
@@ -12,7 +12,35 @@ container:
     - "19530:19530"
     - "9091:9091"
     - "2379:2379"
+  env:
+    DEPLOY_MODE: "STANDALONE"
+    ETCD_USE_EMBED: "true"
+    ETCD_CONFIG_PATH: "/milvus/configs/embedEtcd.yaml"
+    ETCD_DATA_DIR: "/var/lib/milvus/etcd"
+    COMMON_STORAGETYPE: "local"
+  volumes:
+    - ./data/milvus:/var/lib/milvus
+    - ./data/milvus/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml
+    - ./data/milvus/user.yaml:/milvus/configs/user.yaml
+  security_opt:
+    - "seccomp:unconfined"
+  command: "milvus run standalone"
+  setup:
+    directories:
+      - path: ./data/milvus
+    files:
+      - path: ./data/milvus/embedEtcd.yaml
+        content: |
+          listen-client-urls: http://0.0.0.0:2379
+          advertise-client-urls: http://0.0.0.0:2379
+          quota-backend-bytes: 4294967296
+          auto-compaction-mode: revision
+          auto-compaction-retention: '1000'
+      - path: ./data/milvus/user.yaml
+        content: |
+          # Extra config to override default milvus.yaml
 
+# Health check configuration
 health_check:
   url: http://localhost:9091/healthz
   timeout: 60
@@ -20,7 +48,5 @@ health_check:
 
 # Milvus-specific parameters
 params:
-  # Connection timeout
   timeout: 30
-  # Consistency level
   consistency_level: Strong
