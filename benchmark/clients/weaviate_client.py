@@ -7,7 +7,7 @@ import numpy as np
 
 try:
     import weaviate
-    from weaviate.classes.config import Configure, Property, DataType, VectorDistances
+    from weaviate.classes.config import Configure, Property, DataType, VectorDistances, Reconfigure
     from weaviate.classes.query import MetadataQuery
 except ImportError:
     weaviate = None
@@ -234,11 +234,16 @@ class WeaviateClient(BaseVectorDBClient):
         collection = self._client.collections.get(collection_name)
 
         try:
+            # Update ef parameter for HNSW search if specified
+            if search_config.index_type == "hnsw":
+                ef_search = search_config.params.get("efSearch", 64)
+                collection.config.update(
+                    vector_index_config=Reconfigure.VectorIndex.hnsw(ef=ef_search)
+                )
+
             start_time = time.perf_counter()
 
             # Perform vector search
-            # Note: Weaviate v4 doesn't allow runtime ef changes easily,
-            # so we rely on the collection's configured ef
             response = collection.query.near_vector(
                 near_vector=query_vector.tolist(),
                 limit=k,
