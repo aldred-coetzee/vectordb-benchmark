@@ -18,6 +18,10 @@ Usage:
         --dataset sift --indexes hnsw --output results/comparison
 """
 
+# Configure warnings to show each unique warning only once (reduces noise, preserves info)
+import warnings
+warnings.filterwarnings("once")
+
 import argparse
 import sys
 import time
