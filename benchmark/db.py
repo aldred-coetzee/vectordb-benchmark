@@ -40,6 +40,9 @@ class BenchmarkDatabase:
             CREATE TABLE IF NOT EXISTS runs (
                 run_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL,
+                start_time TEXT,
+                end_time TEXT,
+                duration_seconds REAL,
                 database TEXT NOT NULL,
                 db_version TEXT,
                 dataset TEXT NOT NULL,
@@ -53,6 +56,20 @@ class BenchmarkDatabase:
                 notes TEXT
             )
         """)
+
+        # Add new columns to existing tables (migration for existing databases)
+        try:
+            cursor.execute("ALTER TABLE runs ADD COLUMN start_time TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            cursor.execute("ALTER TABLE runs ADD COLUMN end_time TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            cursor.execute("ALTER TABLE runs ADD COLUMN duration_seconds REAL")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
         # Create ingest_results table
         cursor.execute("""
@@ -161,6 +178,7 @@ class BenchmarkDatabase:
         config: Optional[Dict[str, Any]] = None,
         benchmark_config: Optional[Dict[str, Any]] = None,
         notes: Optional[str] = None,
+        start_time: Optional[str] = None,
     ) -> int:
         """
         Create a new benchmark run record.
@@ -176,6 +194,7 @@ class BenchmarkDatabase:
             config: Database configuration dictionary (stored as JSON)
             benchmark_config: Benchmark configuration dictionary (stored as JSON)
             notes: Optional notes about the run
+            start_time: ISO format start time (defaults to now)
 
         Returns:
             run_id: The ID of the created run
@@ -184,24 +203,52 @@ class BenchmarkDatabase:
         cursor = conn.cursor()
 
         timestamp = datetime.now().isoformat()
+        if start_time is None:
+            start_time = timestamp
         hostname = socket.gethostname()
         config_json = json.dumps(config) if config else None
         benchmark_config_json = json.dumps(benchmark_config) if benchmark_config else None
 
         cursor.execute("""
             INSERT INTO runs (
-                timestamp, database, db_version, dataset, vector_count,
+                timestamp, start_time, database, db_version, dataset, vector_count,
                 dimensions, cpus, memory_gb, config_json, benchmark_config_json,
                 hostname, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            timestamp, database, db_version, dataset, vector_count,
+            timestamp, start_time, database, db_version, dataset, vector_count,
             dimensions, cpus, memory_gb, config_json, benchmark_config_json,
             hostname, notes
         ))
 
         conn.commit()
         return cursor.lastrowid
+
+    def update_run_end_time(
+        self,
+        run_id: int,
+        end_time: Optional[str] = None,
+        duration_seconds: Optional[float] = None,
+    ) -> None:
+        """
+        Update a run with end time and duration.
+
+        Args:
+            run_id: The run ID to update
+            end_time: ISO format end time (defaults to now)
+            duration_seconds: Total duration in seconds
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        if end_time is None:
+            end_time = datetime.now().isoformat()
+
+        cursor.execute("""
+            UPDATE runs SET end_time = ?, duration_seconds = ? WHERE run_id = ?
+        """, (end_time, duration_seconds, run_id))
+
+        conn.commit()
 
     def save_ingest_result(
         self,
@@ -325,6 +372,9 @@ class BenchmarkDatabase:
         batch_size: Optional[int] = None,
         num_queries: Optional[int] = None,
         db_version: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        duration_seconds: Optional[float] = None,
     ) -> int:
         """
         Save complete benchmark results to the database.
@@ -336,6 +386,9 @@ class BenchmarkDatabase:
             batch_size: Batch size used for ingestion
             num_queries: Number of queries executed
             db_version: Database version string
+            start_time: ISO format start time
+            end_time: ISO format end time
+            duration_seconds: Total duration in seconds
 
         Returns:
             run_id: The ID of the created run
@@ -353,7 +406,12 @@ class BenchmarkDatabase:
             memory_gb=results.docker_memory_limit_gb,
             config=config,
             benchmark_config=benchmark_config,
+            start_time=start_time,
         )
+
+        # Update end time if provided
+        if end_time or duration_seconds:
+            self.update_run_end_time(run_id, end_time, duration_seconds)
 
         # Save ingest results
         for ingest_result in results.ingest_results:

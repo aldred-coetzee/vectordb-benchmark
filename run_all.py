@@ -423,15 +423,21 @@ Examples:
         print("Error: No valid configs to run after filtering placeholders")
         sys.exit(1)
 
+    from datetime import datetime
+
     print(f"\nWill run benchmarks for: {[c[2] for c in configs_to_run]}\n")
 
     # Run benchmarks sequentially
     summary = SummaryResults()
     total_start = time.time()
+    total_start_time = datetime.now()
+    print(f"Benchmark suite started at: {total_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     for i, (config_path, config, db_name) in enumerate(configs_to_run, 1):
+        db_start = datetime.now()
         print("\n" + "=" * 80)
         print(f"[{i}/{len(configs_to_run)}] BENCHMARKING: {db_name}")
+        print(f"Started at: {db_start.strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 80)
 
         result = run_single_benchmark(
@@ -445,16 +451,23 @@ Examples:
         )
 
         summary.add(result)
+        db_end = datetime.now()
 
         if result.success:
-            print(f"\n[{db_name}] Completed successfully in {result.duration_seconds:.1f}s")
+            print(f"\n[{db_name}] Completed successfully")
+            print(f"  Started:  {db_start.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"  Ended:    {db_end.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"  Duration: {result.duration_seconds:.1f}s ({result.duration_seconds/60:.1f} minutes)")
         else:
             print(f"\n[{db_name}] Failed: {result.error}")
 
     summary.total_duration_seconds = time.time() - total_start
+    total_end_time = datetime.now()
 
     # Print summary
     print_summary(summary)
+    print(f"\nBenchmark suite ended at: {total_end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Total suite duration: {summary.total_duration_seconds:.1f}s ({summary.total_duration_seconds/60:.1f} minutes)")
 
     # Exit with error code if any failed
     if summary.failed:

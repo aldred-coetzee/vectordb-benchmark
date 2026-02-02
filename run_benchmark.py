@@ -162,12 +162,19 @@ def run_with_config(
         skip_docker: If True, skip Docker container management (use existing)
         keep_container: If True, don't stop container after benchmark
     """
+    import time
+    from datetime import datetime
     from benchmark.data_loader import SIFTDataset
     from benchmark.docker_monitor import DockerMonitor
     from benchmark.docker_manager import DockerManager
     from benchmark.runner import BenchmarkRunner
     from benchmark.report import generate_full_report
     from benchmark.db import BenchmarkDatabase
+
+    # Record start time
+    benchmark_start_time = time.time()
+    start_time_iso = datetime.now().isoformat()
+    print(f"\nBenchmark started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Extract database info from config
     db_config = config.get("database", {})
@@ -336,6 +343,11 @@ def run_with_config(
                 # Generate reports (CSV and console)
                 generate_full_report(results, output_dir)
 
+                # Calculate end time and duration
+                benchmark_end_time = time.time()
+                end_time_iso = datetime.now().isoformat()
+                duration_seconds = benchmark_end_time - benchmark_start_time
+
                 # Save to SQLite
                 run_id = db.save_benchmark_results(
                     results=results,
@@ -344,10 +356,14 @@ def run_with_config(
                     batch_size=batch_size,
                     num_queries=num_queries,
                     db_version=db_version,
+                    start_time=start_time_iso,
+                    end_time=end_time_iso,
+                    duration_seconds=duration_seconds,
                 )
                 print(f"\nResults saved to SQLite (run_id: {run_id})")
 
-                print("\nBenchmark complete!")
+                print(f"\nBenchmark ended at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"Total duration: {duration_seconds:.1f}s ({duration_seconds/60:.1f} minutes)")
                 print(f"Results saved to: {output_dir}/")
 
             except KeyboardInterrupt:
