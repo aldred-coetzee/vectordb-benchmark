@@ -19,22 +19,21 @@ Usage:
 """
 
 # Configure warning filters - must be done before any imports
+# IMPORTANT: Filter order matters! Filters are checked from most-recently-added first.
+# So we add "once" first (checked last as fallback), then specific ignores (checked first).
 import warnings
-import os
 
-# Set environment variable to suppress pandas warnings before pandas is imported
-os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning:pandas"
+# Default: show all warnings once (this is checked LAST due to filter order)
+warnings.filterwarnings("once")
 
+# Specific ignores - added after "once" so they're checked FIRST
 # Ignore noisy pandas internal warnings (from kdbai-client and other libs)
-warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"pandas\..*")
-warnings.filterwarnings("ignore", message=r".*BlockManager.*")
 warnings.filterwarnings("ignore", message=r".*Passing a BlockManager.*")
+warnings.filterwarnings("ignore", message=r".*BlockManager.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"pandas")
 
 # Ignore other noisy warnings
 warnings.filterwarnings("ignore", message=".*concatenation with empty.*", category=FutureWarning)
-
-# Show all other warnings once
-warnings.filterwarnings("once")
 
 import argparse
 import sys
