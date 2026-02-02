@@ -25,6 +25,15 @@ health_check:
   timeout: 60
   interval: 2
 
+# Metadata for reports
+metadata:
+  full_name: "Weaviate"
+  architecture: client-server
+  protocol: gRPC
+  persistence: disk
+  license: BSD-3-Clause
+  url: https://weaviate.io
+
 # Weaviate-specific parameters
 params:
   timeout: 30

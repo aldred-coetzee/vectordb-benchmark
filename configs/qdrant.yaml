@@ -20,6 +20,15 @@ health_check:
   timeout: 60
   interval: 2
 
+# Metadata for reports
+metadata:
+  full_name: "Qdrant"
+  architecture: client-server
+  protocol: gRPC
+  persistence: disk
+  license: Apache-2.0
+  url: https://qdrant.tech
+
 # Qdrant-specific parameters
 params:
   grpc_port: 6334

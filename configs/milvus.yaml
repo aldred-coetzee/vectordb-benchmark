@@ -46,6 +46,15 @@ health_check:
   timeout: 60
   interval: 2
 
+# Metadata for reports
+metadata:
+  full_name: "Milvus"
+  architecture: client-server
+  protocol: gRPC
+  persistence: disk
+  license: Apache-2.0
+  url: https://milvus.io
+
 # Milvus-specific parameters
 params:
   timeout: 30

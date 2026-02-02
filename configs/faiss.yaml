@@ -7,6 +7,15 @@ database:
 
 # No container section - FAISS runs in-process
 
+# Metadata for reports
+metadata:
+  full_name: "Facebook AI Similarity Search"
+  architecture: embedded
+  protocol: in-process
+  persistence: memory
+  license: MIT
+  url: https://github.com/facebookresearch/faiss
+
 # FAISS-specific parameters
 params:
   # Use GPU if available

@@ -7,6 +7,15 @@ database:
 
 # No container section - LanceDB runs embedded (like FAISS)
 
+# Metadata for reports
+metadata:
+  full_name: "LanceDB"
+  architecture: embedded
+  protocol: in-process
+  persistence: disk
+  license: Apache-2.0
+  url: https://lancedb.com
+
 # LanceDB-specific parameters
 params:
   # Storage path

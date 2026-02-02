@@ -28,6 +28,15 @@ health_check:
   timeout: 60
   interval: 2
 
+# Metadata for reports
+metadata:
+  full_name: "KDB.AI"
+  architecture: client-server
+  protocol: QIPC
+  persistence: disk
+  license: Commercial
+  url: https://kdb.ai
+
 # KDB.AI specific parameters
 params:
   timeout: 30

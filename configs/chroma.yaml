@@ -22,6 +22,15 @@ health_check:
   timeout: 60
   interval: 2
 
+# Metadata for reports
+metadata:
+  full_name: "ChromaDB"
+  architecture: client-server
+  protocol: HTTP/REST
+  persistence: disk
+  license: Apache-2.0
+  url: https://www.trychroma.com
+
 # ChromaDB-specific parameters
 params:
   timeout: 30

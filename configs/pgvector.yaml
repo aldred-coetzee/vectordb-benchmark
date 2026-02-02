@@ -23,6 +23,15 @@ health_check:
   timeout: 60
   interval: 2
 
+# Metadata for reports
+metadata:
+  full_name: "PostgreSQL pgvector"
+  architecture: client-server
+  protocol: PostgreSQL wire protocol
+  persistence: disk
+  license: PostgreSQL License
+  url: https://github.com/pgvector/pgvector
+
 # pgvector-specific parameters
 params:
   database: postgres
