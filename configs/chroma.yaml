@@ -18,7 +18,7 @@ container:
 
 # Health check configuration
 health_check:
-  url: http://localhost:8000/api/v1/heartbeat
+  url: http://localhost:8000/api/v2/heartbeat
   timeout: 60
   interval: 2
 
