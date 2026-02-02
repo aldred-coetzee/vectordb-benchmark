@@ -338,6 +338,14 @@ class ReportGenerator:
             )
         lines.append("")
 
+        # Database notes (if any)
+        notes = [(run.database, run.metadata.get("notes")) for run in runs if run.metadata.get("notes")]
+        if notes:
+            lines.append("**Notes:**")
+            for db_name, note in sorted(notes):
+                lines.append(f"- **{db_name}**: {note}")
+            lines.append("")
+
         # Ingest Performance Summary
         lines.append("## Ingest Performance Summary")
         lines.append("")
