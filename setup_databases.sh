@@ -281,25 +281,49 @@ setup_milvus() {
 
     cleanup_container "$MILVUS_CONTAINER"
 
-    # Use v2.4.17 for stability - latest versions have embedded etcd issues
-    # See: https://github.com/milvus-io/milvus/issues/40066
-    local milvus_version="v2.4.17"
+    # Create local data directory and config files (following official standalone_embed.sh)
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local milvus_data_dir="$script_dir/data/milvus"
+    if [ ! -d "$milvus_data_dir" ]; then
+        print_info "Creating data directory: $milvus_data_dir"
+        mkdir -p "$milvus_data_dir"
+    fi
 
-    print_info "Pulling Milvus image (${milvus_version})..."
-    docker pull milvusdb/milvus:${milvus_version}
+    # Create embedEtcd.yaml config file
+    cat > "$milvus_data_dir/embedEtcd.yaml" <<'ETCD_CONFIG'
+listen-client-urls: http://0.0.0.0:2379
+advertise-client-urls: http://0.0.0.0:2379
+quota-backend-bytes: 4294967296
+auto-compaction-mode: revision
+auto-compaction-retention: '1000'
+ETCD_CONFIG
+
+    # Create user.yaml config file
+    cat > "$milvus_data_dir/user.yaml" <<'USER_CONFIG'
+# Extra config to override default milvus.yaml
+USER_CONFIG
+
+    print_info "Pulling Milvus image..."
+    docker pull milvusdb/milvus:latest
 
     print_info "Starting Milvus container..."
     docker run -d \
         --name "$MILVUS_CONTAINER" \
+        --security-opt seccomp:unconfined \
         -p 19530:19530 \
         -p 9091:9091 \
+        -p 2379:2379 \
         --memory="$MEMORY_LIMIT" \
         --cpus="$CPU_LIMIT" \
+        -e DEPLOY_MODE=STANDALONE \
         -e ETCD_USE_EMBED=true \
         -e ETCD_DATA_DIR=/var/lib/milvus/etcd \
+        -e ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml \
         -e COMMON_STORAGETYPE=local \
-        -v milvus_data:/var/lib/milvus \
-        milvusdb/milvus:${milvus_version} \
+        -v "$milvus_data_dir":/var/lib/milvus \
+        -v "$milvus_data_dir/embedEtcd.yaml":/milvus/configs/embedEtcd.yaml \
+        -v "$milvus_data_dir/user.yaml":/milvus/configs/user.yaml \
+        milvusdb/milvus:latest \
         milvus run standalone
 
     # Wait for Milvus to be ready
@@ -350,14 +374,21 @@ cleanup_all() {
     done
 
     print_info "Removing volumes..."
-    docker volume rm qdrant_storage pgvector_data weaviate_data milvus_data 2>/dev/null || true
+    docker volume rm qdrant_storage pgvector_data weaviate_data 2>/dev/null || true
 
-    # Remove KDB.AI local data directory
+    # Remove local data directories
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
     local kdbai_data_dir="$script_dir/data/kdbai"
     if [ -d "$kdbai_data_dir" ]; then
         print_info "Removing KDB.AI data directory: $kdbai_data_dir"
         rm -rf "$kdbai_data_dir"
+    fi
+
+    local milvus_data_dir="$script_dir/data/milvus"
+    if [ -d "$milvus_data_dir" ]; then
+        print_info "Removing Milvus data directory: $milvus_data_dir"
+        rm -rf "$milvus_data_dir"
     fi
 
     print_success "Cleanup complete"
