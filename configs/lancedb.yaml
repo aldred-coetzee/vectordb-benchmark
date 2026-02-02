@@ -1,0 +1,13 @@
+# LanceDB Configuration
+# LanceDB is an embedded database, no container required
+database:
+  name: lancedb
+  version: "latest"
+  endpoint: ./data/lancedb  # Local directory for database files
+
+# No container section - LanceDB runs embedded (like FAISS)
+
+# LanceDB-specific parameters
+params:
+  # Storage path
+  path: ./data/lancedb

@@ -94,10 +94,13 @@ def get_client(database: str):
     elif database.lower() == "milvus":
         from benchmark.clients.milvus_client import MilvusClient
         return MilvusClient()
+    elif database.lower() == "lancedb":
+        from benchmark.clients.lancedb_client import LanceDBClient
+        return LanceDBClient()
     else:
         raise ValueError(
             f"Unsupported database: {database}. "
-            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate, milvus"
+            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate, milvus, lancedb"
         )
 
 
