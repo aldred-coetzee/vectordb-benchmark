@@ -1,8 +1,7 @@
 # Weaviate Configuration
-# Placeholder - update with actual Weaviate settings
 database:
   name: weaviate
-  version: "1.23.0"
+  version: "latest"
   endpoint: http://localhost:8080
 
 container:
@@ -12,18 +11,7 @@ container:
   ports:
     - "8080:8080"
     - "50051:50051"
-  env:
-    QUERY_DEFAULTS_LIMIT: "25"
-    AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
-    PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
-    DEFAULT_VECTORIZER_MODULE: "none"
-  volumes:
-    - weaviate-data:/var/lib/weaviate
 
-# Placeholder - requires additional configuration
-placeholder: true
-
-# Health check configuration (placeholder)
 health_check:
   url: http://localhost:8080/v1/.well-known/ready
   timeout: 60

@@ -1,8 +1,7 @@
 # Milvus Configuration
-# Placeholder - update with actual Milvus settings
 database:
   name: milvus
-  version: "2.3.0"
+  version: "2.6"
   endpoint: localhost:19530
 
 container:
@@ -12,16 +11,8 @@ container:
   ports:
     - "19530:19530"
     - "9091:9091"
-  env:
-    ETCD_ENDPOINTS: etcd:2379
-    MINIO_ADDRESS: minio:9000
-  volumes:
-    - milvus-data:/var/lib/milvus
+    - "2379:2379"
 
-# Placeholder - requires external dependencies (etcd, minio)
-placeholder: true
-
-# Health check configuration (placeholder)
 health_check:
   url: http://localhost:9091/healthz
   timeout: 60
