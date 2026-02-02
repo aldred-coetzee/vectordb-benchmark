@@ -18,14 +18,19 @@ Usage:
         --dataset sift --indexes hnsw --output results/comparison
 """
 
-# Configure warning filters
+# Configure warning filters - must be done before any imports
 import warnings
+import os
+
+# Set environment variable to suppress pandas warnings before pandas is imported
+os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning:pandas"
 
 # Ignore noisy pandas internal warnings (from kdbai-client and other libs)
-# Must filter by module to catch warnings raised inside pandas itself
-warnings.filterwarnings("ignore", message=".*BlockManager.*", category=DeprecationWarning)
-warnings.filterwarnings("ignore", message=".*BlockManagerUnconsolidated.*", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pandas.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"pandas\..*")
+warnings.filterwarnings("ignore", message=r".*BlockManager.*")
+warnings.filterwarnings("ignore", message=r".*Passing a BlockManager.*")
+
+# Ignore other noisy warnings
 warnings.filterwarnings("ignore", message=".*concatenation with empty.*", category=FutureWarning)
 
 # Show all other warnings once
