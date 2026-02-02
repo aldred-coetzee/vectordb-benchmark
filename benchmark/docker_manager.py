@@ -21,6 +21,7 @@ class HealthCheckConfig:
     command: Optional[str] = None
     timeout: int = 60
     interval: int = 2
+    type: Optional[str] = None  # "http" (default) or "tcp"
 
 
 @dataclass
@@ -106,6 +107,7 @@ class DockerManager:
                 command=health_section.get("command"),
                 timeout=health_section.get("timeout", 60),
                 interval=health_section.get("interval", 2),
+                type=health_section.get("type"),  # "http" (default) or "tcp"
             )
 
         # Parse setup config
@@ -480,6 +482,36 @@ class DockerManager:
         except Exception:
             return False
 
+    def _check_health_tcp(self, url: str) -> bool:
+        """Check health via TCP connection.
+
+        Parses host:port from URL (e.g., redis://localhost:6379) and attempts connection.
+        """
+        import socket
+
+        # Parse host and port from URL
+        # Handle formats: redis://localhost:6379, localhost:6379, tcp://host:port
+        url = url.replace("redis://", "").replace("tcp://", "")
+        if ":" in url:
+            host, port_str = url.split(":", 1)
+            # Remove any path component
+            port_str = port_str.split("/")[0]
+            try:
+                port = int(port_str)
+            except ValueError:
+                return False
+        else:
+            return False
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+
     def _check_health_command(self, command: str) -> bool:
         """Check health via shell command.
 
@@ -554,7 +586,11 @@ class DockerManager:
             if health_check:
                 ready = False
                 if health_check.url:
-                    ready = self._check_health_url(health_check.url)
+                    # Use TCP check if type is "tcp", otherwise HTTP
+                    if health_check.type == "tcp":
+                        ready = self._check_health_tcp(health_check.url)
+                    else:
+                        ready = self._check_health_url(health_check.url)
                 elif health_check.command:
                     ready = self._check_health_command(health_check.command)
                 else:
