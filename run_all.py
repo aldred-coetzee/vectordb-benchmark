@@ -22,7 +22,10 @@ Usage:
 import warnings
 
 # Ignore noisy pandas internal warnings (from kdbai-client and other libs)
+# Must filter by module to catch warnings raised inside pandas itself
 warnings.filterwarnings("ignore", message=".*BlockManager.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*BlockManagerUnconsolidated.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pandas.*")
 warnings.filterwarnings("ignore", message=".*concatenation with empty.*", category=FutureWarning)
 
 # Show all other warnings once
