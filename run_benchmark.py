@@ -97,10 +97,13 @@ def get_client(database: str):
     elif database.lower() == "lancedb":
         from benchmark.clients.lancedb_client import LanceDBClient
         return LanceDBClient()
+    elif database.lower() == "chroma":
+        from benchmark.clients.chroma_client import ChromaClient
+        return ChromaClient()
     else:
         raise ValueError(
             f"Unsupported database: {database}. "
-            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate, milvus, lancedb"
+            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate, milvus, lancedb, chroma"
         )
 
 

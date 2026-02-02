@@ -1,0 +1,27 @@
+# ChromaDB Configuration
+database:
+  name: chroma
+  version: "latest"
+  endpoint: http://localhost:8000
+
+container:
+  image: chromadb/chroma:latest
+  cpus: 4
+  memory: 8g
+  ports:
+    - "8000:8000"
+  volumes:
+    - ./data/chroma:/chroma/chroma
+  env:
+    ANONYMIZED_TELEMETRY: "false"
+    ALLOW_RESET: "true"
+
+# Health check configuration
+health_check:
+  url: http://localhost:8000/api/v1/heartbeat
+  timeout: 60
+  interval: 2
+
+# ChromaDB-specific parameters
+params:
+  timeout: 30
