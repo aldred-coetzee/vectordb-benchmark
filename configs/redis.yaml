@@ -6,7 +6,7 @@ database:
 
 container:
   image: redis/redis-stack-server:latest
-  cpus: 4
+  cpus: 8
   memory: 8g
   ports:
     - "6379:6379"

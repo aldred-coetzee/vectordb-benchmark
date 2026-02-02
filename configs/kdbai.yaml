@@ -6,7 +6,7 @@ database:
 
 container:
   image: portal.dl.kx.com/kdbai-db
-  cpus: 4
+  cpus: 8
   memory: 8g
   ports:
     - "8082:8082"
