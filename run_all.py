@@ -18,8 +18,14 @@ Usage:
         --dataset sift --indexes hnsw --output results/comparison
 """
 
-# Show each unique warning only once (reduces noise while preserving useful info)
+# Configure warning filters
 import warnings
+
+# Ignore noisy pandas internal warnings (from kdbai-client and other libs)
+warnings.filterwarnings("ignore", message=".*BlockManager.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*concatenation with empty.*", category=FutureWarning)
+
+# Show all other warnings once
 warnings.filterwarnings("once")
 
 import argparse
