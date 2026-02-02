@@ -18,7 +18,7 @@ Usage:
         --dataset sift --indexes hnsw --output results/comparison
 """
 
-# Configure warnings to show each unique warning only once (reduces noise, preserves info)
+# Show each unique warning only once (reduces noise while preserving useful info)
 import warnings
 warnings.filterwarnings("once")
 
@@ -116,7 +116,10 @@ def run_single_benchmark(
     from benchmark.report import generate_full_report
     from benchmark.db import BenchmarkDatabase
 
+    from datetime import datetime
+
     start_time = time.time()
+    start_time_iso = datetime.now().isoformat()
 
     # Load configs
     config = load_yaml_config(config_path)
@@ -247,7 +250,9 @@ def run_single_benchmark(
                 db_output_dir = f"{output_dir}/{database_name}"
                 generate_full_report(results, db_output_dir)
 
-                # Save to SQLite
+                # Save to SQLite with timing info
+                end_time_iso = datetime.now().isoformat()
+                duration_seconds = time.time() - start_time
                 run_id = db.save_benchmark_results(
                     results=results,
                     config=config,
@@ -255,6 +260,9 @@ def run_single_benchmark(
                     batch_size=batch_size,
                     num_queries=num_queries,
                     db_version=db_version,
+                    start_time=start_time_iso,
+                    end_time=end_time_iso,
+                    duration_seconds=duration_seconds,
                 )
             finally:
                 if monitor:

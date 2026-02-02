@@ -18,7 +18,7 @@ Usage:
         --container kdbai-bench --cpus 8 --memory 32
 """
 
-# Configure warnings to show each unique warning only once (reduces noise, preserves info)
+# Show each unique warning only once (reduces noise while preserving useful info)
 import warnings
 warnings.filterwarnings("once")
 
