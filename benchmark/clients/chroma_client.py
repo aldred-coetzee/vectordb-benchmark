@@ -164,15 +164,22 @@ class ChromaClient(BaseVectorDBClient):
 
         collection = self._collections[table_name]
 
-        # ChromaDB expects string IDs and list of embeddings
-        str_ids = [str(id_val) for id_val in ids]
-        embeddings = vectors.tolist()
+        # ChromaDB has a max batch size limit (5461 for 128-dim vectors)
+        max_batch_size = 5000  # Stay under the limit
 
         try:
-            collection.add(
-                ids=str_ids,
-                embeddings=embeddings,
-            )
+            for i in range(0, len(ids), max_batch_size):
+                batch_ids = ids[i:i + max_batch_size]
+                batch_vectors = vectors[i:i + max_batch_size]
+
+                # ChromaDB expects string IDs and list of embeddings
+                str_ids = [str(id_val) for id_val in batch_ids]
+                embeddings = batch_vectors.tolist()
+
+                collection.add(
+                    ids=str_ids,
+                    embeddings=embeddings,
+                )
         except Exception as e:
             raise RuntimeError(f"Failed to insert vectors: {e}")
 
