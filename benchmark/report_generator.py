@@ -346,12 +346,17 @@ class ReportGenerator:
                 lines.append(f"- **{db_name}**: {note}")
             lines.append("")
 
-        # Ingest Performance Summary
+        # Ingest Performance Summary - sorted by HNSW throughput (descending)
         lines.append("## Ingest Performance Summary")
         lines.append("")
         lines.append("| Database | FLAT (vec/s) | FLAT Time | HNSW (vec/s) | HNSW Time | Peak Memory |")
         lines.append("|----------|--------------|-----------|--------------|-----------|-------------|")
-        for run in sorted(runs, key=lambda r: r.database):
+
+        def get_hnsw_throughput(run):
+            hnsw = next((i for i in run.ingest_results if i.index_type.lower() == "hnsw"), None)
+            return hnsw.throughput_vps if hnsw else 0
+
+        for run in sorted(runs, key=get_hnsw_throughput, reverse=True):
             flat = next((i for i in run.ingest_results if i.index_type.lower() == "flat"), None)
             hnsw = next((i for i in run.ingest_results if i.index_type.lower() == "hnsw"), None)
 
@@ -364,13 +369,18 @@ class ReportGenerator:
             lines.append(f"| {run.database} | {flat_vps} | {flat_time} | {hnsw_vps} | {hnsw_time} | {peak_mem} |")
         lines.append("")
 
-        # Search Performance Summary (Best Recall Config)
+        # Search Performance Summary (Best Recall Config) - sorted by QPS (descending)
         lines.append("## Search Performance Summary")
-        lines.append("*HNSW index at ~97%+ recall where available*")
+        lines.append("*HNSW index at ~97%+ recall where available, sorted by QPS*")
         lines.append("")
         lines.append("| Database | Config | QPS | R@10 | R@100 | P50 (ms) | P99 (ms) |")
         lines.append("|----------|--------|-----|------|-------|----------|----------|")
-        for run in sorted(runs, key=lambda r: r.database):
+
+        def get_best_qps(run):
+            best = self._get_best_search_result(run)
+            return best.qps if best else 0
+
+        for run in sorted(runs, key=get_best_qps, reverse=True):
             best = self._get_best_search_result(run)
             if best:
                 config = f"ef={best.ef_search}" if best.ef_search else "flat"
@@ -400,7 +410,8 @@ class ReportGenerator:
             lines.append(header)
             lines.append("|" + "---|" * (1 + len(all_ef_values) * 2))
 
-            for run in sorted(runs, key=lambda r: r.database):
+            # Sort by best QPS (descending)
+            for run in sorted(runs, key=get_best_qps, reverse=True):
                 row = f"| {run.database} |"
                 for ef in all_ef_values:
                     result = next(
