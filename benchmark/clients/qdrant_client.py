@@ -74,6 +74,13 @@ class QdrantClient(BaseVectorDBClient):
     def disconnect(self) -> None:
         """Disconnect from Qdrant."""
         self._index_configs.clear()
+        if self._client is not None:
+            try:
+                # Close the client to avoid socket leaks
+                if hasattr(self._client, 'close'):
+                    self._client.close()
+            except Exception:
+                pass  # Ignore errors during cleanup
         self._client = None
         print("Disconnected from Qdrant")
 

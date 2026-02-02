@@ -55,6 +55,13 @@ class KDBAIClient(BaseVectorDBClient):
         self._tables.clear()
         self._index_configs.clear()
         self._database = None
+        if self._session is not None:
+            try:
+                # Try to close the session properly to avoid socket leaks
+                if hasattr(self._session, 'close'):
+                    self._session.close()
+            except Exception:
+                pass  # Ignore errors during cleanup
         self._session = None
         print("Disconnected from KDB.AI")
 
