@@ -30,7 +30,7 @@ metadata:
   persistence: disk
   license: Apache-2.0
   url: https://www.trychroma.com
-  notes: "HNSW only - no true flat/brute-force index. Flat benchmark uses HNSW with high ef."
+  notes: "HNSW only (no true flat index). efSearch cannot be changed at runtime - fixed at collection creation."
 
 # ChromaDB-specific parameters
 params:
