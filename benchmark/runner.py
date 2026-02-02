@@ -389,7 +389,12 @@ class BenchmarkRunner:
 
             # Test different efSearch values
             print("\n  Testing different efSearch values...")
+            k = max(self.k_values)
             for ef_search in hnsw_ef_search_values:
+                # Skip efSearch values less than k (required by some databases like Milvus)
+                if ef_search < k:
+                    print(f"  Skipping efSearch={ef_search} (must be >= k={k})")
+                    continue
                 hnsw_search_config = SearchConfig(
                     index_name="hnsw_index",
                     index_type="hnsw",
