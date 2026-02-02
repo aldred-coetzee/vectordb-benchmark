@@ -100,10 +100,13 @@ def get_client(database: str):
     elif database.lower() == "chroma":
         from benchmark.clients.chroma_client import ChromaClient
         return ChromaClient()
+    elif database.lower() == "redis":
+        from benchmark.clients.redis_client import RedisClient
+        return RedisClient()
     else:
         raise ValueError(
             f"Unsupported database: {database}. "
-            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate, milvus, lancedb, chroma"
+            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate, milvus, lancedb, chroma, redis"
         )
 
 

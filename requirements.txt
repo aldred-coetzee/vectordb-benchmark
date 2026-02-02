@@ -13,3 +13,4 @@ pyyaml>=6.0
 lancedb>=0.4.0
 pyarrow>=14.0.0
 chromadb>=0.4.0
+redis>=5.0.0

@@ -1,0 +1,25 @@
+# Redis Stack Configuration (Vector Search)
+database:
+  name: redis
+  version: "latest"
+  endpoint: localhost:6379
+
+container:
+  image: redis/redis-stack-server:latest
+  cpus: 4
+  memory: 8g
+  ports:
+    - "6379:6379"
+  volumes:
+    - ./data/redis:/data
+
+# Health check configuration
+health_check:
+  url: redis://localhost:6379
+  timeout: 60
+  interval: 2
+  type: tcp  # Use TCP check instead of HTTP
+
+# Redis-specific parameters
+params:
+  timeout: 30
