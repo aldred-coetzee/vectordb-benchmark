@@ -24,6 +24,9 @@ datasets/sift/
 # Generated results
 results/
 
+# Database data directories
+data/
+
 # IDE and editor files
 .vscode/
 .idea/

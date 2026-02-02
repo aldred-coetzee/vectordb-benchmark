@@ -209,6 +209,15 @@ setup_kdbai() {
 
     cleanup_container "$KDBAI_CONTAINER"
 
+    # Create local data directory (KDB.AI requires a local directory, not a Docker volume)
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local kdbai_data_dir="$script_dir/data/kdbai"
+    if [ ! -d "$kdbai_data_dir" ]; then
+        print_info "Creating data directory: $kdbai_data_dir"
+        mkdir -p "$kdbai_data_dir"
+        chmod 0777 "$kdbai_data_dir"
+    fi
+
     # Calculate CPU limit for --cpuset-cpus (KDB.AI Standard Edition limited to 24 cores)
     local cpu_count=${CPU_LIMIT:-4}
     if [ "$cpu_count" -gt 24 ]; then
@@ -227,7 +236,7 @@ setup_kdbai() {
         -e KDB_LICENSE_B64="$KDB_LICENSE_B64" \
         -e VDB_DIR="/tmp/kx/data/vdb" \
         -e THREADS="$cpu_count" \
-        -v kdbai_data:/tmp/kx/data \
+        -v "$kdbai_data_dir":/tmp/kx/data \
         "$KDBAI_IMAGE"
 
     # Wait for KDB.AI to be ready
@@ -272,8 +281,12 @@ setup_milvus() {
 
     cleanup_container "$MILVUS_CONTAINER"
 
-    print_info "Pulling Milvus image..."
-    docker pull milvusdb/milvus:latest
+    # Use v2.4.17 for stability - latest versions have embedded etcd issues
+    # See: https://github.com/milvus-io/milvus/issues/40066
+    local milvus_version="v2.4.17"
+
+    print_info "Pulling Milvus image (${milvus_version})..."
+    docker pull milvusdb/milvus:${milvus_version}
 
     print_info "Starting Milvus container..."
     docker run -d \
@@ -286,7 +299,7 @@ setup_milvus() {
         -e ETCD_DATA_DIR=/var/lib/milvus/etcd \
         -e COMMON_STORAGETYPE=local \
         -v milvus_data:/var/lib/milvus \
-        milvusdb/milvus:latest \
+        milvusdb/milvus:${milvus_version} \
         milvus run standalone
 
     # Wait for Milvus to be ready
@@ -337,7 +350,15 @@ cleanup_all() {
     done
 
     print_info "Removing volumes..."
-    docker volume rm qdrant_storage pgvector_data kdbai_data weaviate_data milvus_data 2>/dev/null || true
+    docker volume rm qdrant_storage pgvector_data weaviate_data milvus_data 2>/dev/null || true
+
+    # Remove KDB.AI local data directory
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local kdbai_data_dir="$script_dir/data/kdbai"
+    if [ -d "$kdbai_data_dir" ]; then
+        print_info "Removing KDB.AI data directory: $kdbai_data_dir"
+        rm -rf "$kdbai_data_dir"
+    fi
 
     print_success "Cleanup complete"
 }
