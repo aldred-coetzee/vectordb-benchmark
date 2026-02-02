@@ -247,7 +247,8 @@ class RedisClient(BaseVectorDBClient):
 
             # Extract IDs and distances
             if results.docs:
-                ids = np.array([int(doc.id) for doc in results.docs], dtype=np.int64)
+                # Redis returns IDs as "prefix:id", extract just the numeric part
+            ids = np.array([int(doc.id.split(":")[-1]) for doc in results.docs], dtype=np.int64)
                 # Redis returns score (lower is better for L2)
                 distances = np.array(
                     [float(doc.__vector_score) for doc in results.docs],
