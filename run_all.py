@@ -73,6 +73,40 @@ class SummaryResults:
         return [r for r in self.results if not r.success]
 
 
+def cleanup_benchmark_containers() -> None:
+    """
+    Clean up any lingering benchmark containers from previous runs.
+
+    This prevents port conflicts when containers didn't shut down properly.
+    """
+    try:
+        import docker
+        client = docker.from_env()
+
+        # Find all containers with benchmark- prefix
+        containers = client.containers.list(all=True, filters={"name": "benchmark-"})
+
+        if containers:
+            print("Cleaning up lingering benchmark containers...")
+            for container in containers:
+                try:
+                    if container.status == "running":
+                        print(f"  Stopping: {container.name}")
+                        container.stop(timeout=5)
+                    print(f"  Removing: {container.name}")
+                    container.remove(force=True)
+                except Exception as e:
+                    print(f"  Warning: Could not remove {container.name}: {e}")
+
+        # Prune any dangling networks that might hold ports
+        client.networks.prune()
+        client.close()
+
+    except Exception as e:
+        print(f"Warning: Container cleanup failed: {e}")
+        print("Continuing anyway...")
+
+
 def find_config_files(configs_dir: str = "configs") -> List[Path]:
     """Find all YAML config files in the configs directory."""
     configs_path = Path(configs_dir)
@@ -414,6 +448,9 @@ Examples:
             if not cf.exists():
                 print(f"Error: Config file not found: {cf}")
                 sys.exit(1)
+
+    # Clean up any lingering containers from previous runs
+    cleanup_benchmark_containers()
 
     print("=" * 80)
     print("VECTOR DATABASE BENCHMARK - RUN ALL")
