@@ -305,7 +305,16 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - Failed DBs show error message in report
 - Re-run specific DBs manually if needed
 
-### Cost Safety
+### Cost & Time Summary
+
+**Instances:**
+
+| Role | Type | Specs | Count | When |
+|------|------|-------|-------|------|
+| Orchestrator | t3.micro | 2 vCPU, 1GB RAM | 1 | During run |
+| Worker | m5.2xlarge | 8 vCPU, 32GB RAM | up to 9 | During run |
+
+**Auto-Terminate Timeouts:**
 
 | Component | Max Lifetime | Action |
 |-----------|--------------|--------|
@@ -320,15 +329,29 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | Medium (Milvus, Weaviate, Redis, ChromaDB, KDB.AI) | 30 min | 45 min | 90 min | 35 min |
 | Slow (pgvector) | 70 min | 80 min | **~9 hrs** | 80 min |
 
-**Time Estimate** (full run: 35 jobs, pgvector skips SIFT-10M):
-- Longest job: ~90 min (medium DB + SIFT-10M)
-- 4 waves with 9 parallel workers
+**Full Run** (35 jobs, pgvector skips SIFT-10M):
+- First results (SIFT-1M): ~30 min
 - Total wall clock: ~3-4 hours
 
-**Cost Estimate** (full run):
-- Orchestrator: 4 hrs × $0.0104/hr = ~$0.04
-- Workers: 35 jobs × avg 0.75 hrs × $0.384/hr = ~$10
-- **Total: ~$10 per full benchmark run**
+**Running Costs** (per full benchmark run):
+
+| Component | Calculation | Cost |
+|-----------|-------------|------|
+| Orchestrator | 4 hrs × $0.0104/hr | $0.04 |
+| Workers | 35 jobs × 0.75 hrs × $0.384/hr | ~$10 |
+| S3 transfer | Results only | ~$0.01 |
+| **Total per run** | | **~$10** |
+
+**Standby Costs** (monthly, no runs):
+
+| Component | Calculation | Cost |
+|-----------|-------------|------|
+| Worker AMI (EBS snapshot) | 12GB × $0.05/GB/mo | $0.60 |
+| Orchestrator AMI | 8GB × $0.05/GB/mo | $0.40 |
+| S3 results storage | ~100MB | ~$0.01 |
+| **Total standby** | | **~$1/month** |
+
+**No instances running when idle** — all auto-terminate after completion.
 
 ### Current Constraints
 
