@@ -216,13 +216,15 @@ pgvector           ✓        ✓         ✗         ✓       =  3 jobs
 - Use `--include-slow` flag to override if needed
 - Report notes exclusions with reason
 
-**Job Queue Example**:
+**Job Queue** (ordered smallest → largest for early results):
 ```
-Wave 1: qdrant+sift1m, milvus+sift1m, redis+sift1m, ...  (9 parallel)
-Wave 2: qdrant+gist1m, milvus+gist1m, ...               (as slots free)
-Wave 3: qdrant+sift10m, ... (pgvector skipped)
-Wave 4: qdrant+glove100, ...
+Wave 1: All 9 DBs × SIFT-1M    (~30 min) → First comparison ready
+Wave 2: All 9 DBs × GloVe-100  (~35 min) → Cosine metric results
+Wave 3: All 9 DBs × GIST-1M    (~80 min) → High-dimension results
+Wave 4: 8 DBs × SIFT-10M       (~90 min) → Scale results (pgvector skipped)
 ```
+
+Early results arrive in ~30 min; full run completes in ~3-4 hours.
 
 ### Instance Configuration
 
