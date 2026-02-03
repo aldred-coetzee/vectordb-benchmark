@@ -377,6 +377,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 **Blocked — waiting on admin**:
 - [ ] IAM role for instances (need: role named `vectordb-benchmark-role`, trusted entity: EC2, policy: S3 access to `kdbai-rnd-bucket`)
+- [ ] S3 bucket access for user `acoetzee@kx.com` to `s3://kdbai-rnd-bucket/vectordb-benchmark/*`
 
 **Still TODO**:
 - [ ] S3 bucket structure (`s3://kdbai-rnd-bucket/vectordb-benchmark/`)
