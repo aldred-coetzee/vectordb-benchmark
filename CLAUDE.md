@@ -375,8 +375,10 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 **Completed**:
 - [x] Key pair: `vectordb-benchmark` (stored at `~/.ssh/vectordb-benchmark.pem`)
 
+**Blocked — waiting on admin**:
+- [ ] IAM role for instances (need: role named `vectordb-benchmark-role`, trusted entity: EC2, policy: S3 access to `kdbai-rnd-bucket`)
+
 **Still TODO**:
-- [ ] IAM role for instances (S3 read/write access)
 - [ ] S3 bucket structure (`s3://kdbai-rnd-bucket/vectordb-benchmark/`)
 - [ ] Worker AMI (datasets + code + Docker images)
 - [ ] Orchestrator AMI
