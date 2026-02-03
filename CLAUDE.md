@@ -258,7 +258,7 @@ Worker AMI contains:
 ### S3 Structure
 
 ```
-s3://kdbai-rnd-bucket/vectordb-benchmark/
+s3://vectordb-benchmark-acoetzee/
   runs/
     2024-02-03-1430/
       config.json          # What to run (databases, datasets, timeouts)
@@ -374,13 +374,10 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 **Completed**:
 - [x] Key pair: `vectordb-benchmark` (stored at `~/.ssh/vectordb-benchmark.pem`)
+- [x] S3 bucket: `vectordb-benchmark-acoetzee` (us-east-1)
 
 **Blocked — waiting on admin**:
-- [ ] IAM role for instances (need: role named `vectordb-benchmark-role`, trusted entity: EC2, policy: S3 access to `kdbai-rnd-bucket`)
-- [ ] S3 bucket access for user `acoetzee@kx.com` to `s3://kdbai-rnd-bucket/vectordb-benchmark/*`
-
-**Still TODO**:
-- [ ] S3 bucket structure (`s3://kdbai-rnd-bucket/vectordb-benchmark/`)
+- [ ] IAM role for instances (need: role named `vectordb-benchmark-role`, trusted entity: EC2, policy: S3 access to `vectordb-benchmark-acoetzee`)
 - [ ] Worker AMI (datasets + code + Docker images)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
