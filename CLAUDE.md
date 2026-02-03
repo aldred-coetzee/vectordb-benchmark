@@ -372,10 +372,12 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | Route Table | vectordb-benchmark-public-rt | rtb-035c76d702ea21a1f | 0.0.0.0/0 → IGW |
 | Security Group | vectordb-benchmark-sg | sg-0ad7c9fb0c8cc4dd0 | SSH (22) restricted to admin IP, self-referencing for worker comms |
 
+**Completed**:
+- [x] Key pair: `vectordb-benchmark` (stored at `~/.ssh/vectordb-benchmark.pem`)
+
 **Still TODO**:
 - [ ] IAM role for instances (S3 read/write access)
 - [ ] S3 bucket structure (`s3://kdbai-rnd-bucket/vectordb-benchmark/`)
-- [ ] Key pair for SSH access
 - [ ] Worker AMI (datasets + code + Docker images)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
