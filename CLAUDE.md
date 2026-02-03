@@ -359,6 +359,27 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Console launch**: Manually start orchestrator via AWS Console for now
 - **Future**: Request programmatic access to automate fully
 
+### AWS Setup Progress
+
+**AWS Profile**: `kx-ai`
+
+**VPC** (created):
+| Resource | Name | ID | Details |
+|----------|------|-----|---------|
+| VPC | vectordb-benchmark | vpc-015d3534212af6082 | 10.0.0.0/16 |
+| Subnet | vectordb-benchmark-public | subnet-086c44bc342f4252b | 10.0.1.0/24, us-east-1a |
+| Internet Gateway | vectordb-benchmark-igw | igw-00af569e869ed0e9b | Attached to VPC |
+| Route Table | vectordb-benchmark-public-rt | rtb-035c76d702ea21a1f | 0.0.0.0/0 → IGW |
+| Security Group | vectordb-benchmark-sg | sg-0ad7c9fb0c8cc4dd0 | SSH (22) open, self-referencing for worker comms |
+
+**Still TODO**:
+- [ ] IAM role for instances (S3 read/write access)
+- [ ] S3 bucket structure (`s3://kdbai-rnd-bucket/vectordb-benchmark/`)
+- [ ] Key pair for SSH access
+- [ ] Worker AMI (datasets + code + Docker images)
+- [ ] Orchestrator AMI
+- [ ] `run_aws.py` CLI implementation
+
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
 - Spot instances vs on-demand? (spot cheaper but can be interrupted)
