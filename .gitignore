@@ -39,6 +39,9 @@ data/
 .env
 .envrc
 
+# Claude Code local settings
+.claude/
+
 # Jupyter notebooks checkpoints
 .ipynb_checkpoints/
 
