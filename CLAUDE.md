@@ -370,7 +370,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | Subnet | vectordb-benchmark-public | subnet-086c44bc342f4252b | 10.0.1.0/24, us-east-1a |
 | Internet Gateway | vectordb-benchmark-igw | igw-00af569e869ed0e9b | Attached to VPC |
 | Route Table | vectordb-benchmark-public-rt | rtb-035c76d702ea21a1f | 0.0.0.0/0 → IGW |
-| Security Group | vectordb-benchmark-sg | sg-0ad7c9fb0c8cc4dd0 | SSH (22) open, self-referencing for worker comms |
+| Security Group | vectordb-benchmark-sg | sg-0ad7c9fb0c8cc4dd0 | SSH (22) restricted to admin IP, self-referencing for worker comms |
 
 **Still TODO**:
 - [ ] IAM role for instances (S3 read/write access)
