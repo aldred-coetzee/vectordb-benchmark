@@ -231,6 +231,7 @@ class RedisClient(BaseVectorDBClient):
             Query(query_str)
             .return_fields("id", "__vector_score")
             .sort_by("__vector_score")
+            .paging(0, k)  # Explicitly request k results (default is 10)
             .dialect(2)
         )
 

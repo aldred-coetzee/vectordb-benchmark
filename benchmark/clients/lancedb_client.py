@@ -195,14 +195,20 @@ class LanceDBClient(BaseVectorDBClient):
         # Perform search
         query = query_vector.tolist()
 
-        # LanceDB search with optional ef parameter for HNSW
+        # LanceDB search with IVF_HNSW_SQ index
+        # Note: IVF_HNSW doesn't expose HNSW ef_search at query time.
+        # Instead, we use refine_factor to control search quality:
+        # - nprobes: number of IVF partitions to search (fixed at reasonable value)
+        # - refine_factor: re-ranks extra candidates (maps to efSearch semantics)
         if search_config.index_type == "hnsw":
             ef_search = search_config.params.get("efSearch", 64)
-            # Use nprobes to control search quality (similar to ef)
+            # Map efSearch to refine_factor: ef=64->rf=1, ef=128->rf=2, ef=256->rf=4
+            refine_factor = max(1, ef_search // 64)
             results = (
                 table.search(query)
                 .limit(k)
-                .nprobes(ef_search)
+                .nprobes(50)  # Fixed: search ~20% of 256 partitions
+                .refine_factor(refine_factor)
                 .to_list()
             )
         else:
