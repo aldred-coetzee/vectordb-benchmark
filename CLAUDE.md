@@ -377,7 +377,11 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [x] S3 bucket: `vectordb-benchmark-acoetzee` (us-east-1)
 - [x] IAM role: `vectordb-benchmark-role` (EC2 trust, AmazonS3FullAccess attached)
 
+**Blocked — waiting on admin**:
+- [ ] EC2 launch permission (SCP explicit deny on `ec2:RunInstances` — need admin to allow)
+
 **Still TODO**:
+- [ ] Test EC2 launch
 - [ ] Worker AMI (datasets + code + Docker images)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
