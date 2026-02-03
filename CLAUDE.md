@@ -156,23 +156,110 @@ Parallelize benchmark runs across AWS infrastructure to reduce total runtime fro
 - **Core benchmark code has no cloud dependencies** — keeps it testable and portable
 - **Common interface** — orchestrators share same contract for invoking benchmarks
 
-### Requirements
-1. **Isolated environments**: Each database runs in its own EC2 instance or container
-2. **Parallel execution**: Run multiple databases simultaneously
-3. **Result aggregation**: Collect results from all workers into unified report
-4. **Cost efficiency**: Use spot instances, auto-terminate on completion
-5. **Reproducibility**: Infrastructure as code (Terraform/CDK/Pulumi)
+### AWS Architecture
 
-### Design Considerations
-- Worker orchestration: AWS Batch vs ECS vs direct EC2
-- Data distribution: S3 for dataset, results collection
-- Coordination: Step Functions vs simple SQS queue vs orchestrator script
-- Instance sizing: Match current benchmark specs (8 CPU, 32GB RAM)
+```
+┌─────────────────┐
+│  Your Machine   │
+│  (local)        │
+│                 │
+│  run_aws.py     │──── Launch via Console (for now)
+│  --pull-report  │◄─── Pull final report from S3
+└─────────────────┘
+
+         ┌────────────────────────────────────┐
+         │         Orchestrator EC2           │
+         │           (t3.micro)               │
+         │                                    │
+         │  - Reads config from S3            │
+         │  - Monitors worker heartbeats      │
+         │  - Aggregates results              │
+         │  - Generates report → S3           │
+         │  - Auto-terminates when done       │
+         └──────────────┬─────────────────────┘
+                        │
+         ┌──────────────┼──────────────┐
+         ▼              ▼              ▼
+   ┌──────────┐   ┌──────────┐   ┌──────────┐
+   │ Worker 1 │   │ Worker 2 │   │ Worker 3 │
+   │ (Qdrant) │   │ (Milvus) │   │ (Redis)  │
+   │          │   │          │   │          │
+   │ Upload → │   │ Upload → │   │ Upload → │
+   │ S3, exit │   │ S3, exit │   │ S3, exit │
+   └──────────┘   └──────────┘   └──────────┘
+                        │
+                        ▼
+                  ┌──────────┐
+                  │    S3    │
+                  │ (bucket) │
+                  └──────────┘
+```
+
+### S3 Structure
+
+```
+s3://kdbai-rnd-bucket/vectordb-benchmark/
+  runs/
+    2024-02-03-1430/
+      config.json          # What to run (databases, dataset, timeouts)
+      status.json          # Live status (updated by orchestrator)
+      report.html          # Final report (when complete)
+      workers/
+        qdrant/
+          status.json      # running|completed|failed
+          heartbeat.txt    # Last heartbeat timestamp
+          result.json      # Benchmark results
+          error.log        # If failed
+        milvus/
+          ...
+```
+
+### CLI Interface
+
+```bash
+# Local (unchanged)
+python run_benchmark.py --config configs/qdrant.yaml
+python run_all.py --databases qdrant,milvus
+
+# AWS
+python run_aws.py                                    # Run all
+python run_aws.py --databases qdrant,milvus,redis   # Specific DBs
+python run_aws.py --dataset gist-1m                  # Specific dataset
+python run_aws.py --databases qdrant --dataset sift-10m  # Combined
+python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
+```
+
+### Failure Handling (Simple v1)
+
+| Failure | Detection | Response |
+|---------|-----------|----------|
+| Worker won't start | Orchestrator timeout | Log error, skip, continue |
+| Benchmark crashes | Exit code ≠ 0 | Upload error.log, mark failed |
+| DB container fails | Health check timeout | Upload error, mark failed |
+| Worker hangs | No heartbeat for 15 min | Mark timeout |
+
+- **No auto-retry** in v1 — report shows what succeeded vs failed
+- Failed DBs show error message in report
+- Re-run specific DBs manually if needed
+
+### Cost Safety
+
+| Component | Max Lifetime | Action |
+|-----------|--------------|--------|
+| Orchestrator | 4 hours | Self-terminates, kills stuck workers |
+| Workers | 2 hours each | Self-terminate after benchmark |
+
+Worst case cost: ~$0.04 (orchestrator) + worker hours
+
+### Current Constraints
+
+- **No CLI EC2 create**: Org policy blocks programmatic launch
+- **Console launch**: Manually start orchestrator via AWS Console for now
+- **Future**: Request programmatic access to automate fully
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
-- How to handle databases that need specific Docker images?
-- Central orchestrator vs fully distributed workers?
+- Spot instances vs on-demand? (spot cheaper but can be interrupted)
 
 ### Future: Filtered & Hybrid Search (Out of Scope for Now)
 
