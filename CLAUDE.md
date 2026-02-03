@@ -158,6 +158,11 @@ Parallelize benchmark runs across AWS infrastructure to reduce total runtime fro
 
 ### AWS Architecture
 
+**Job Model**: One worker = one (database, dataset) pair
+- 9 DBs × 4 datasets = 36 jobs total
+- Max 9 concurrent workers (one per DB)
+- Jobs queued and dispatched by orchestrator
+
 ```
 ┌─────────────────┐
 │  Your Machine   │
@@ -171,20 +176,24 @@ Parallelize benchmark runs across AWS infrastructure to reduce total runtime fro
          │         Orchestrator EC2           │
          │           (t3.micro)               │
          │                                    │
-         │  - Reads config from S3            │
-         │  - Monitors worker heartbeats      │
-         │  - Aggregates results              │
+         │  - Manages job queue (36 jobs)     │
+         │  - Launches up to 9 workers        │
+         │  - Monitors heartbeats             │
+         │  - As workers finish, launches     │
+         │    next job from queue             │
+         │  - Aggregates all results          │
          │  - Generates report → S3           │
          │  - Auto-terminates when done       │
          └──────────────┬─────────────────────┘
-                        │
+                        │ launches/monitors
          ┌──────────────┼──────────────┐
          ▼              ▼              ▼
    ┌──────────┐   ┌──────────┐   ┌──────────┐
-   │ Worker 1 │   │ Worker 2 │   │ Worker 3 │
-   │ (Qdrant) │   │ (Milvus) │   │ (Redis)  │
+   │ Worker 1 │   │ Worker 2 │   │ Worker 3 │   ... (up to 9)
+   │ qdrant + │   │ milvus + │   │ redis +  │
+   │ sift-1m  │   │ sift-1m  │   │ sift-1m  │
    │          │   │          │   │          │
-   │ Upload → │   │ Upload → │   │ Upload → │
+   │ result → │   │ result → │   │ result → │
    │ S3, exit │   │ S3, exit │   │ S3, exit │
    └──────────┘   └──────────┘   └──────────┘
                         │
@@ -195,22 +204,61 @@ Parallelize benchmark runs across AWS infrastructure to reduce total runtime fro
                   └──────────┘
 ```
 
+**Job Queue Example** (9 DBs × 4 datasets):
+```
+Wave 1: qdrant+sift1m, milvus+sift1m, redis+sift1m, ...  (9 parallel)
+Wave 2: qdrant+gist1m, milvus+gist1m, ...               (as slots free)
+Wave 3: qdrant+sift10m, ...
+Wave 4: qdrant+glove100, ...
+```
+
+### Instance Configuration
+
+Only **2 configurations** needed:
+
+| Role | Instance Type | Count | Purpose |
+|------|---------------|-------|---------|
+| Orchestrator | t3.micro | 1 | Coordinate jobs, aggregate results |
+| Worker | m5.2xlarge (8 CPU, 32GB) | up to 9 | Run benchmarks |
+
+### Worker AMI (Pre-baked)
+
+Datasets baked into AMI for efficiency (avoids 360GB repeated downloads):
+
+```
+Worker AMI contains:
+  /data/
+    sift-1m/      (~500MB)
+    gist-1m/      (~4GB)
+    sift-10m/     (~5GB)
+    glove-100/    (~500MB)
+  /app/
+    vectordb-benchmark/   (benchmark code)
+    docker images         (pre-pulled)
+```
+
+- AMI size: ~12GB
+- AMI storage cost: ~$1.20/month
+- Workers launch ready to run (no download wait)
+
 ### S3 Structure
 
 ```
 s3://kdbai-rnd-bucket/vectordb-benchmark/
   runs/
     2024-02-03-1430/
-      config.json          # What to run (databases, dataset, timeouts)
+      config.json          # What to run (databases, datasets, timeouts)
       status.json          # Live status (updated by orchestrator)
       report.html          # Final report (when complete)
-      workers/
-        qdrant/
-          status.json      # running|completed|failed
+      jobs/
+        qdrant-sift1m/
+          status.json      # pending|running|completed|failed
           heartbeat.txt    # Last heartbeat timestamp
           result.json      # Benchmark results
           error.log        # If failed
-        milvus/
+        qdrant-gist1m/
+          ...
+        milvus-sift1m/
           ...
 ```
 
@@ -247,9 +295,17 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | Component | Max Lifetime | Action |
 |-----------|--------------|--------|
 | Orchestrator | 4 hours | Self-terminates, kills stuck workers |
-| Workers | 2 hours each | Self-terminate after benchmark |
+| Worker (per job) | 1 hour | Self-terminate after single benchmark |
 
-Worst case cost: ~$0.04 (orchestrator) + worker hours
+**Time Estimate** (full run: 9 DBs × 4 datasets):
+- ~30 min average per job
+- 4 waves of 9 parallel workers
+- Total wall clock: ~2 hours
+
+**Cost Estimate** (full run):
+- Orchestrator: 2 hrs × $0.0104/hr = ~$0.02
+- Workers: 36 jobs × 0.5 hrs × $0.384/hr = ~$7
+- **Total: ~$7 per full benchmark run**
 
 ### Current Constraints
 
