@@ -204,11 +204,23 @@ Parallelize benchmark runs across AWS infrastructure to reduce total runtime fro
                   └──────────┘
 ```
 
-**Job Queue Example** (9 DBs × 4 datasets):
+**Job Matrix**:
+```
+                 SIFT-1M  GIST-1M  SIFT-10M  GloVe-100
+Fast DBs (8)       ✓        ✓         ✓         ✓       = 32 jobs
+pgvector           ✓        ✓         ✗         ✓       =  3 jobs
+                                                Total:   35 jobs
+```
+
+- pgvector excluded from SIFT-10M by default (HNSW build takes ~9 hours)
+- Use `--include-slow` flag to override if needed
+- Report notes exclusions with reason
+
+**Job Queue Example**:
 ```
 Wave 1: qdrant+sift1m, milvus+sift1m, redis+sift1m, ...  (9 parallel)
 Wave 2: qdrant+gist1m, milvus+gist1m, ...               (as slots free)
-Wave 3: qdrant+sift10m, ...
+Wave 3: qdrant+sift10m, ... (pgvector skipped)
 Wave 4: qdrant+glove100, ...
 ```
 
@@ -270,10 +282,11 @@ python run_benchmark.py --config configs/qdrant.yaml
 python run_all.py --databases qdrant,milvus
 
 # AWS
-python run_aws.py                                    # Run all
+python run_aws.py                                    # Run all (35 jobs)
 python run_aws.py --databases qdrant,milvus,redis   # Specific DBs
 python run_aws.py --dataset gist-1m                  # Specific dataset
 python run_aws.py --databases qdrant --dataset sift-10m  # Combined
+python run_aws.py --include-slow                     # Include pgvector+SIFT-10M (~9hrs)
 python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 ```
 
@@ -295,17 +308,25 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | Component | Max Lifetime | Action |
 |-----------|--------------|--------|
 | Orchestrator | 4 hours | Self-terminates, kills stuck workers |
-| Worker (per job) | 1 hour | Self-terminate after single benchmark |
+| Worker (per job) | 2 hours | Self-terminate after single benchmark |
 
-**Time Estimate** (full run: 9 DBs × 4 datasets):
-- ~30 min average per job
-- 4 waves of 9 parallel workers
-- Total wall clock: ~2 hours
+**Realistic Time Estimates** (per job):
+
+| DB Type | SIFT-1M | GIST-1M | SIFT-10M | GloVe-100 |
+|---------|---------|---------|----------|-----------|
+| Fast (FAISS, Qdrant, LanceDB) | 20 min | 30 min | 60 min | 25 min |
+| Medium (Milvus, Weaviate, Redis, ChromaDB, KDB.AI) | 30 min | 45 min | 90 min | 35 min |
+| Slow (pgvector) | 70 min | 80 min | **~9 hrs** | 80 min |
+
+**Time Estimate** (full run: 35 jobs, pgvector skips SIFT-10M):
+- Longest job: ~90 min (medium DB + SIFT-10M)
+- 4 waves with 9 parallel workers
+- Total wall clock: ~3-4 hours
 
 **Cost Estimate** (full run):
-- Orchestrator: 2 hrs × $0.0104/hr = ~$0.02
-- Workers: 36 jobs × 0.5 hrs × $0.384/hr = ~$7
-- **Total: ~$7 per full benchmark run**
+- Orchestrator: 4 hrs × $0.0104/hr = ~$0.04
+- Workers: 35 jobs × avg 0.75 hrs × $0.384/hr = ~$10
+- **Total: ~$10 per full benchmark run**
 
 ### Current Constraints
 
