@@ -128,7 +128,8 @@ fi
 echo "Running benchmark: $DATABASE on $DATASET"
 cd /app/vectordb-benchmark
 
-python3.12 run_benchmark.py \
+# Run as ec2-user (who has the Python dependencies installed)
+sudo -u ec2-user python3.12 run_benchmark.py \
     --config configs/${DATABASE}.yaml \
     --dataset ${DATASET} \
     --output results
