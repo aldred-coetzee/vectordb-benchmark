@@ -424,6 +424,14 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 **Future possibility**: Web UI app on top for even easier triggering and result viewing.
 
+### Next Steps (Priority Order)
+
+1. **Build Orchestrator** — Create `aws/worker_startup.sh` with auto-termination, orchestrator script to launch workers
+2. **Create Orchestrator AMI** — Bake in orchestrator script, create Launch Template
+3. **End-to-End Test** — Trigger via Launch Template, verify full flow works
+4. **Run All Databases** — Benchmark all 9 DBs on SIFT-1M and GIST-1M, generate comparison report
+5. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), Web UI
+
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
 - Spot instances vs on-demand? (spot cheaper but can be interrupted)
