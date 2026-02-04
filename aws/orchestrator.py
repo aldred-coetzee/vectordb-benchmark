@@ -251,8 +251,15 @@ def main():
     jobs = [(db, ds) for db in databases for ds in datasets]
     print(f"\nTotal jobs: {len(jobs)}")
 
-    # Initialize AWS clients (use profile if SSO login active)
-    session = boto3.Session(region_name=AWS_REGION, profile_name="vectordb")
+    # Initialize AWS clients
+    # On EC2: uses IAM role (no profile needed)
+    # Locally: uses 'vectordb' profile if available, otherwise default
+    try:
+        session = boto3.Session(region_name=AWS_REGION, profile_name="vectordb")
+        session.client("sts").get_caller_identity()  # Test if profile works
+    except Exception:
+        # Profile not available (running on EC2), use default credentials
+        session = boto3.Session(region_name=AWS_REGION)
     ec2_client = session.client("ec2")
     s3_client = session.client("s3")
 
