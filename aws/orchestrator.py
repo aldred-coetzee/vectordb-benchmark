@@ -251,8 +251,8 @@ def main():
     jobs = [(db, ds) for db in databases for ds in datasets]
     print(f"\nTotal jobs: {len(jobs)}")
 
-    # Initialize AWS clients
-    session = boto3.Session(region_name=AWS_REGION)
+    # Initialize AWS clients (use profile if SSO login active)
+    session = boto3.Session(region_name=AWS_REGION, profile_name="vectordb")
     ec2_client = session.client("ec2")
     s3_client = session.client("s3")
 
