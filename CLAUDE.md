@@ -411,6 +411,18 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [ ] Add GloVe-100 support (HDF5 format - needs h5py)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
+- [ ] EC2 Launch Template for easy team triggering
+
+### Planned: Team Trigger Mechanism
+
+**Approach**: EC2 Launch Template (simplest)
+1. Create orchestrator AMI with startup script baked in
+2. Create Launch Template with pre-configured VPC/subnet/security group
+3. Team member: EC2 Console → Launch Templates → Select → Launch
+4. Orchestrator runs everything automatically, terminates when done
+5. Results appear in S3
+
+**Future possibility**: Web UI app on top for even easier triggering and result viewing.
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
