@@ -4,18 +4,44 @@
 #
 # Uses the same Worker AMI but runs orchestrator.py instead of a single benchmark.
 # Launches worker instances, monitors progress, aggregates results.
+#
+# CONFIGURATION VIA INSTANCE TAGS:
+#   Databases   - Comma-separated list (default: all 9)
+#   Datasets    - Comma-separated list (default: sift,gist)
+#   PullLatest  - Docker images to refresh (default: none)
+#
+# Example tags when launching:
+#   Databases = qdrant,milvus,kdbai
+#   Datasets = sift
 
 # =============================================================================
-# Configuration (can be overridden via instance tags or environment)
+# Configuration
 # =============================================================================
 export HOME=/root
 
-# Defaults - override by setting instance tags or modifying here
-DATABASES="${DATABASES:-qdrant,milvus,weaviate,chroma,redis,pgvector,kdbai,faiss,lancedb}"
-DATASETS="${DATASETS:-sift,gist}"
-PULL_LATEST="${PULL_LATEST:-}"
 S3_BUCKET="vectordb-benchmark-590780615264"
 MAX_RUNTIME_MINUTES=240  # 4 hours max for full suite
+AWS_REGION="us-west-2"
+
+# Get instance ID for reading tags
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+echo "Instance ID: $INSTANCE_ID"
+
+# Read configuration from instance tags (with defaults)
+get_tag() {
+    aws ec2 describe-tags \
+        --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=$1" \
+        --query 'Tags[0].Value' --output text --region $AWS_REGION 2>/dev/null
+}
+
+DATABASES=$(get_tag "Databases")
+DATASETS=$(get_tag "Datasets")
+PULL_LATEST=$(get_tag "PullLatest")
+
+# Apply defaults if tags not set or returned "None"
+[ -z "$DATABASES" ] || [ "$DATABASES" = "None" ] && DATABASES="qdrant,milvus,weaviate,chroma,redis,pgvector,kdbai,faiss,lancedb"
+[ -z "$DATASETS" ] || [ "$DATASETS" = "None" ] && DATASETS="sift,gist"
+[ "$PULL_LATEST" = "None" ] && PULL_LATEST=""
 
 # =============================================================================
 # Logging
