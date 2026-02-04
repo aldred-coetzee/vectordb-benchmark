@@ -11,6 +11,9 @@
 # =============================================================================
 # Configuration (populated by orchestrator)
 # =============================================================================
+# Set HOME for user-data environment (runs as root)
+export HOME=/root
+
 DATABASE="{{DATABASE}}"           # e.g., qdrant, milvus, kdbai
 DATASET="{{DATASET}}"             # e.g., sift, gist
 S3_BUCKET="{{S3_BUCKET}}"         # e.g., vectordb-benchmark-590780615264
