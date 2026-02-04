@@ -409,12 +409,12 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [x] Worker auto-termination implemented (trap on exit + scheduled shutdown)
 
 **Still TODO**:
-- [ ] Create `aws/orchestrator_startup.sh` (runs orchestrator.py instead of single benchmark)
-- [ ] Create Launch Templates (orchestrator + worker) for easy team triggering
+- [x] Create `aws/orchestrator_startup.sh` (runs orchestrator.py instead of single benchmark)
+- [ ] Create Launch Template (`vectordb-benchmark-full`) for full benchmark runs
 - [ ] Run full benchmark suite (all 9 DBs on SIFT-1M and GIST-1M)
 - [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
 - [ ] Add GloVe-100 support (HDF5 format - needs h5py)
-- [ ] `run_aws.py` CLI implementation
+- [ ] (Optional) Streamlit UI if team usage increases
 
 **First Worker Test Results** (2026-02-04):
 - Qdrant on SIFT-1M: ✓ Completed successfully
@@ -422,28 +422,53 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - Instance auto-terminated: ✓
 - HNSW efSearch=128: 381 QPS, 2.4ms p50 latency, 99.3% recall
 
-### Team Trigger Mechanism
+### Triggering Benchmarks
 
-**Approach**: Single AMI, Two Launch Templates
+**Two methods depending on use case:**
 
-Use the **same Worker AMI** for both orchestrator and workers (simpler than maintaining two AMIs):
+| Method | Use Case | How |
+|--------|----------|-----|
+| **Launch Template** | Full benchmark (all 9 DBs) | EC2 Console → Launch Template → Launch |
+| **CLI from laptop** | Custom runs (subset of DBs, new releases) | `python aws/orchestrator.py --databases ...` |
 
-| Launch Template | User Data | Purpose |
-|-----------------|-----------|---------|
-| `vectordb-benchmark-orchestrator` | `orchestrator_startup.sh` | Runs orchestrator.py, launches workers |
-| `vectordb-benchmark-worker` | `worker_startup.sh` | Runs single benchmark, uploads results |
+#### Method 1: Launch Template (Full Run)
+
+One Launch Template: `vectordb-benchmark-full`
+- Runs all 9 databases on sift + gist datasets
+- Fire and forget - just launch and check S3 later
+- Uses Worker AMI with `orchestrator_startup.sh`
 
 **Flow**:
-1. Team member: EC2 Console → Launch Templates → `vectordb-benchmark-orchestrator` → Launch
-2. Orchestrator instance starts, runs `orchestrator.py`
-3. Orchestrator launches worker instances (using worker Launch Template or direct API)
-4. Workers run benchmarks, upload results to S3, auto-terminate
-5. Orchestrator monitors completion, aggregates results, auto-terminates
-6. Results appear in S3
+1. EC2 Console → Launch Templates → `vectordb-benchmark-full` → Launch
+2. Orchestrator instance launches workers via API
+3. Workers run benchmarks, upload to S3, auto-terminate
+4. Orchestrator monitors, then auto-terminates
+5. Results in `s3://vectordb-benchmark-590780615264/runs/{run-id}/`
 
-**Why single AMI works**: Worker AMI already has Python, boto3, codebase, and IAM role - everything the orchestrator needs.
+#### Method 2: CLI (Custom Runs)
 
-**Future possibility**: Web UI app on top for even easier triggering and result viewing.
+For new KDB.AI releases or testing specific databases:
+
+```bash
+# Ensure AWS SSO is active
+aws sso login --profile vectordb
+
+# KDB.AI release comparison (pull fresh image)
+python aws/orchestrator.py --databases kdbai,qdrant,milvus --pull-latest kdbai --datasets sift
+
+# Quick single-DB test
+python aws/orchestrator.py --databases qdrant --datasets sift
+
+# Full run from CLI (same as Launch Template)
+python aws/orchestrator.py
+```
+
+#### Why This Approach
+
+- **Simple**: One template for common case, CLI for everything else
+- **No UI needed**: Usage is occasional ("once in a while" full runs, subset on KDB.AI releases)
+- **Flexible**: CLI allows any combination without predefined presets
+- **Future option**: Can add Streamlit UI later if team grows or usage increases
 
 ### Next Steps (Priority Order)
 
