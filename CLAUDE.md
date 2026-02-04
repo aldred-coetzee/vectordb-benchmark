@@ -258,7 +258,7 @@ Worker AMI contains:
 ### S3 Structure
 
 ```
-s3://vectordb-benchmark-acoetzee/
+s3://<bucket-name>/
   runs/
     2024-02-03-1430/
       config.json          # What to run (databases, datasets, timeouts)
@@ -361,26 +361,18 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 ### AWS Setup Progress
 
-**AWS Profile**: `kx-ai`
+**AWS Profile**: TBD (new account)
 
-**VPC** (created):
-| Resource | Name | ID | Details |
-|----------|------|-----|---------|
-| VPC | vectordb-benchmark | vpc-015d3534212af6082 | 10.0.0.0/16 |
-| Subnet | vectordb-benchmark-public | subnet-086c44bc342f4252b | 10.0.1.0/24, us-east-1a |
-| Internet Gateway | vectordb-benchmark-igw | igw-00af569e869ed0e9b | Attached to VPC |
-| Route Table | vectordb-benchmark-public-rt | rtb-035c76d702ea21a1f | 0.0.0.0/0 → IGW |
-| Security Group | vectordb-benchmark-sg | sg-0ad7c9fb0c8cc4dd0 | SSH (22) restricted to admin IP, self-referencing for worker comms |
-
-**Completed**:
-- [x] Key pair: `vectordb-benchmark` (stored at `~/.ssh/vectordb-benchmark.pem`)
-- [x] S3 bucket: `vectordb-benchmark-acoetzee` (us-east-1)
-- [x] IAM role: `vectordb-benchmark-role` (EC2 trust, AmazonS3FullAccess attached)
-
-**Blocked — waiting on admin**:
-- [ ] EC2 launch permission (SCP explicit deny on `ec2:RunInstances` — need admin to allow)
-
-**Still TODO**:
+**TODO** (starting fresh with new AWS account):
+- [ ] Configure AWS CLI profile
+- [ ] Create VPC (10.0.0.0/16)
+- [ ] Create public subnet (10.0.1.0/24)
+- [ ] Create and attach Internet Gateway
+- [ ] Configure route table (0.0.0.0/0 → IGW)
+- [ ] Create security group (SSH restricted, self-referencing for worker comms)
+- [ ] Create key pair (`vectordb-benchmark`)
+- [ ] Create S3 bucket for results
+- [ ] Create IAM role with EC2 trust + S3 access
 - [ ] Test EC2 launch
 - [ ] Worker AMI (datasets + code + Docker images)
 - [ ] Orchestrator AMI
