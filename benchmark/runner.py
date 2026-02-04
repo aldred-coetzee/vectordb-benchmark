@@ -11,7 +11,7 @@ import numpy as np
 SEARCH_PROGRESS_INTERVAL = 2000
 
 from .clients.base import BaseVectorDBClient, IndexConfig, SearchConfig
-from .data_loader import SIFTDataset
+from .data_loader import TexmexDataset
 from .docker_monitor import DockerMonitor, MonitoringResult
 from .metrics import (
     calculate_latency_percentiles,
@@ -69,7 +69,7 @@ class BenchmarkRunner:
     def __init__(
         self,
         client: BaseVectorDBClient,
-        dataset: SIFTDataset,
+        dataset: TexmexDataset,
         monitor: Optional[DockerMonitor] = None,
         batch_size: int = 50000,
         warmup_queries: int = 100,

@@ -194,7 +194,3 @@ class TexmexDataset:
             ids = np.arange(start_idx, end_idx, dtype=np.int64)
             vectors = self.base_vectors[start_idx:end_idx]
             yield start_idx, ids, vectors
-
-
-# Backwards compatibility alias
-SIFTDataset = TexmexDataset

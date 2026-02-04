@@ -183,7 +183,7 @@ def run_with_config(
     """
     import time
     from datetime import datetime
-    from benchmark.data_loader import SIFTDataset
+    from benchmark.data_loader import TexmexDataset
     from benchmark.docker_monitor import DockerMonitor
     from benchmark.docker_manager import DockerManager
     from benchmark.runner import BenchmarkRunner
@@ -309,7 +309,7 @@ def run_with_config(
             # Load dataset
             print("\nLoading dataset...")
             try:
-                dataset = SIFTDataset(str(dataset_path))
+                dataset = TexmexDataset(str(dataset_path))
                 dataset.load_base_vectors()  # Explicitly trigger lazy loading
                 print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
             except Exception as e:
@@ -426,7 +426,7 @@ def run_legacy(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command-line arguments
     """
-    from benchmark.data_loader import SIFTDataset
+    from benchmark.data_loader import TexmexDataset
     from benchmark.docker_monitor import DockerMonitor
     from benchmark.runner import BenchmarkRunner
     from benchmark.report import generate_full_report
@@ -476,7 +476,7 @@ def run_legacy(args: argparse.Namespace) -> None:
     # Load dataset
     print("\nLoading dataset...")
     try:
-        dataset = SIFTDataset(str(dataset_path))
+        dataset = TexmexDataset(str(dataset_path))
         dataset.load_base_vectors()  # Explicitly trigger lazy loading
         print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
     except Exception as e:

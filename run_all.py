@@ -156,7 +156,7 @@ def run_single_benchmark(
     Returns:
         BenchmarkResult with success/failure status
     """
-    from benchmark.data_loader import SIFTDataset
+    from benchmark.data_loader import TexmexDataset
     from benchmark.docker_manager import DockerManager
     from benchmark.docker_monitor import DockerMonitor
     from benchmark.runner import BenchmarkRunner
@@ -260,7 +260,7 @@ def run_single_benchmark(
                 continue
 
             # Load dataset
-            sift_dataset = SIFTDataset(str(dataset_path))
+            sift_dataset = TexmexDataset(str(dataset_path))
 
             # Setup monitor
             monitor = None
