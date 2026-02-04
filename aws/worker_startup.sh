@@ -84,6 +84,10 @@ fi
 # =============================================================================
 echo "Pulling latest code..."
 cd /app/vectordb-benchmark
+
+# Fix git ownership issue (repo created by ec2-user, user-data runs as root)
+git config --global --add safe.directory /app/vectordb-benchmark
+
 git pull origin main
 
 # =============================================================================
