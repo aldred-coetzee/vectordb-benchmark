@@ -409,7 +409,6 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [ ] Add worker auto-termination after benchmark completes
 - [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
 - [ ] Add GloVe-100 support (HDF5 format - needs h5py)
-- [ ] Rebuild Worker AMI v2 (or rely on `git pull` at startup for code fixes)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
 
