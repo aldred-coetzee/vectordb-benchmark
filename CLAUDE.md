@@ -237,28 +237,45 @@ Only **2 configurations** needed:
 
 ### Worker AMI (Pre-baked)
 
-Datasets baked into AMI for efficiency (avoids 360GB repeated downloads):
+Datasets and Docker images baked into AMI for fast startup:
 
 ```
-Worker AMI contains:
+Worker AMI (v1) contains:
   /data/
-    sift-1m/      (~500MB)
-    gist-1m/      (~4GB)
-    sift-10m/     (~5GB)
-    glove-100/    (~500MB)
+    sift/         (~500MB)  - SIFT-1M dataset
+    gist/         (~4GB)    - GIST-1M dataset
   /app/
-    vectordb-benchmark/   (benchmark code)
-    docker images         (pre-pulled)
+    vectordb-benchmark/     - benchmark code (git pull at startup for latest)
+  Docker images (pre-pulled):
+    - qdrant/qdrant:latest
+    - milvusdb/milvus:latest
+    - semitechnologies/weaviate:latest
+    - chromadb/chroma:latest
+    - redis/redis-stack:latest
+    - pgvector/pgvector:pg16
+    - portal.dl.kx.com/kdbai-db:latest
 ```
 
-- AMI size: ~12GB
-- AMI storage cost: ~$1.20/month
+- AMI size: ~15GB
+- AMI storage cost: ~$0.75/month
 - Workers launch ready to run (no download wait)
+
+**Not yet included** (need data loader extensions):
+- SIFT-10M (different format - .bvecs)
+- GloVe-100 (HDF5 format)
+
+**Docker Image Updates**:
+- Default: Use images baked in AMI (fast)
+- Optional: `--pull-latest` or `--pull-latest=qdrant,kdbai` to pull fresh images at startup
+- KDB.AI pulls require credentials from S3 (see below)
 
 ### S3 Structure
 
 ```
 s3://vectordb-benchmark-590780615264/
+  config/
+    kc.lic                 # KDB.AI license (encrypted, fetched at startup)
+    docker-config.json     # Docker registry credentials for KDB.AI (encrypted)
   runs/
     2024-02-03-1430/
       config.json          # What to run (databases, datasets, timeouts)
@@ -377,12 +394,16 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [x] Key pair: `vectordb-benchmark` (stored at `~/.ssh/vectordb-benchmark.pem`)
 - [x] S3 bucket: `vectordb-benchmark-590780615264` (us-west-2)
 - [x] IAM role: `vectordb-benchmark-role` (EC2 trust, AmazonS3FullAccess attached)
+- [x] S3 config files: `config/kc.lic` (KDB.AI license), `config/docker-config.json` (KDB.AI registry creds)
 
 **Completed**:
 - [x] Test EC2 launch (verified SSH access works)
 
+**In Progress**:
+- [ ] Worker AMI v1: `vectordb-benchmark-worker-v1` (SIFT-1M, GIST-1M, all Docker images)
+  - AMI builder instance: `i-0d804e31d6fc47696`
+
 **Still TODO**:
-- [ ] Worker AMI (datasets + code + Docker images)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
 
