@@ -410,10 +410,13 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 **Still TODO**:
 - [x] Create `aws/orchestrator_startup.sh` (runs orchestrator.py instead of single benchmark)
-- [ ] Create Launch Template (`vectordb-benchmark-full`) for full benchmark runs
+- [x] Create Launch Template (`vectordb-benchmark-full`) for full benchmark runs
+- [ ] **BLOCKED**: Add `iam:PassRole` permission to IAM role (required for orchestrator to launch workers with IAM profiles)
+- [ ] Add Name tags to worker instances in `orchestrator.py` (currently workers have no Name tag)
 - [ ] Run full benchmark suite (all 9 DBs on SIFT-1M and GIST-1M)
 - [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
 - [ ] Add GloVe-100 support (HDF5 format - needs h5py)
+- [ ] (Optional) Rebuild AMI with boto3 pre-installed (currently installed at startup)
 - [ ] (Optional) Streamlit UI if team usage increases
 
 **First Worker Test Results** (2026-02-04):
@@ -421,6 +424,12 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - Results uploaded to S3: `s3://vectordb-benchmark-590780615264/runs/2026-02-04-2117/jobs/qdrant-sift/`
 - Instance auto-terminated: ✓
 - HNSW efSearch=128: 381 QPS, 2.4ms p50 latency, 99.3% recall
+
+**Implementation Notes**:
+- boto3 not included in AMI (was added to requirements.txt after AMI was built)
+  - Workaround: `orchestrator_startup.sh` installs boto3 at startup
+  - Future: Rebuild AMI with boto3 pre-installed
+- `orchestrator.py` Session handling: tries `profile_name="vectordb"` (local SSO), falls back to default (EC2 IAM role)
 
 ### Triggering Benchmarks
 
@@ -433,10 +442,20 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 #### Method 1: Launch Template (Full Run)
 
-One Launch Template: `vectordb-benchmark-full`
+One Launch Template: `vectordb-benchmark-full` (created, version 6)
+- Instance type: t3.small (orchestrator)
+- AMI: ami-0f9bf04496aedd923 (Worker AMI - same for both roles)
+- IAM profile: vectordb-benchmark-role
+- User-data: fetches and runs `aws/orchestrator_startup.sh` from GitHub
 - Runs all 9 databases on sift + gist datasets
 - Fire and forget - just launch and check S3 later
-- Uses Worker AMI with `orchestrator_startup.sh`
+
+**Configuration via Instance Tags** (optional):
+| Tag | Default | Description |
+|-----|---------|-------------|
+| `Databases` | all 9 | Comma-separated list (e.g., `qdrant,milvus,kdbai`) |
+| `Datasets` | `sift,gist` | Comma-separated list |
+| `PullLatest` | none | Docker images to refresh (e.g., `kdbai,qdrant`) |
 
 **Flow**:
 1. EC2 Console → Launch Templates → `vectordb-benchmark-full` → Launch
@@ -444,6 +463,8 @@ One Launch Template: `vectordb-benchmark-full`
 3. Workers run benchmarks, upload to S3, auto-terminate
 4. Orchestrator monitors, then auto-terminates
 5. Results in `s3://vectordb-benchmark-590780615264/runs/{run-id}/`
+
+**Current Blocker**: IAM role needs `iam:PassRole` permission to launch workers with IAM profiles.
 
 #### Method 2: CLI (Custom Runs)
 
@@ -474,9 +495,11 @@ python aws/orchestrator.py
 
 1. ~~**Build Orchestrator**~~ ✓ — Created `aws/worker_startup.sh` and `aws/orchestrator.py`
 2. ~~**Verify Worker End-to-End**~~ ✓ — First test completed, results in S3, auto-terminated
-3. **Create Launch Templates** — Using single Worker AMI for both orchestrator and workers
-4. **Run All Databases** — Benchmark all 9 DBs on SIFT-1M and GIST-1M, generate comparison report
-5. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
+3. ~~**Create Launch Template**~~ ✓ — `vectordb-benchmark-full` (version 6)
+4. **BLOCKED: Add IAM PassRole Permission** — Need admin to add `iam:PassRole` to `vectordb-benchmark-role`
+5. **Fix Worker Name Tags** — Update `orchestrator.py` to add Name tag when launching workers
+6. **Run All Databases** — Benchmark all 9 DBs on SIFT-1M and GIST-1M, generate comparison report
+7. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
