@@ -92,6 +92,10 @@ git pull origin main
 # Create symlink so relative paths work
 ln -sf /data /app/vectordb-benchmark/data
 
+# Install boto3 (not in AMI, added to requirements.txt after AMI was built)
+echo "Installing boto3..."
+sudo -u ec2-user pip3.12 install boto3 --quiet
+
 # =============================================================================
 # Run orchestrator
 # =============================================================================
