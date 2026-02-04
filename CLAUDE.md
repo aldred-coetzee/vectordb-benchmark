@@ -398,14 +398,18 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 **Completed**:
 - [x] Test EC2 launch (verified SSH access works)
-
-**Completed**:
 - [x] Worker AMI v1: `ami-0f9bf04496aedd923` (`vectordb-benchmark-worker-v1`)
   - Datasets: SIFT-1M, GIST-1M
   - Docker images: Qdrant, Milvus, Weaviate, ChromaDB, Redis, pgvector, KDB.AI
+- [x] Test Worker AMI (Qdrant benchmark successful on SIFT-1M)
+- [x] Standardized dataset path to `/data/` (no symlinks needed)
+- [x] Refactored `SIFTDataset` → `TexmexDataset` (auto-detects dataset name from directory)
 
 **Still TODO**:
-- [ ] Test Worker AMI (launch, run benchmark)
+- [ ] Add worker auto-termination after benchmark completes
+- [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
+- [ ] Add GloVe-100 support (HDF5 format - needs h5py)
+- [ ] Rebuild Worker AMI v2 (or rely on `git pull` at startup for code fixes)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
 
@@ -429,5 +433,12 @@ Design consideration: Keep dataset/query loading modular so filtered queries can
 
 ## Data Loader Status
 
-- **Texmex (.fvecs/.ivecs)**: Already supported — SIFT-1M, GIST-1M, SIFT-10M
-- **ANN-Benchmarks (HDF5)**: Needed for GloVe-100 — download from `https://ann-benchmarks.com/glove-100-angular.hdf5`
+- **Texmex (.fvecs/.ivecs)**: Supported — SIFT-1M, GIST-1M
+- **Texmex (.bvecs)**: NOT YET SUPPORTED — SIFT-10M uses byte vectors, needs `read_bvecs()` function
+- **ANN-Benchmarks (HDF5)**: NOT YET SUPPORTED — GloVe-100 needs h5py integration
+
+### Dataset Paths
+
+All datasets use `/data/` as the base path (configured in `benchmark.yaml`):
+- `/data/sift/` — SIFT-1M (sift_base.fvecs, sift_query.fvecs, sift_groundtruth.ivecs)
+- `/data/gist/` — GIST-1M (gist_base.fvecs, gist_query.fvecs, gist_groundtruth.ivecs)
