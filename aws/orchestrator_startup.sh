@@ -99,17 +99,18 @@ echo "Starting orchestrator..."
 cd /app/vectordb-benchmark
 
 # Build command with options
-ORCHESTRATOR_CMD="python3.12 aws/orchestrator.py"
-ORCHESTRATOR_CMD="$ORCHESTRATOR_CMD --databases $DATABASES"
-ORCHESTRATOR_CMD="$ORCHESTRATOR_CMD --datasets $DATASETS"
-ORCHESTRATOR_CMD="$ORCHESTRATOR_CMD --run-id $RUN_ID"
+# Run as ec2-user since Python dependencies are installed for that user
+ORCHESTRATOR_ARGS="aws/orchestrator.py"
+ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --databases $DATABASES"
+ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --datasets $DATASETS"
+ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --run-id $RUN_ID"
 
 if [ -n "$PULL_LATEST" ]; then
-    ORCHESTRATOR_CMD="$ORCHESTRATOR_CMD --pull-latest $PULL_LATEST"
+    ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --pull-latest $PULL_LATEST"
 fi
 
-echo "Running: $ORCHESTRATOR_CMD"
-$ORCHESTRATOR_CMD
+echo "Running: sudo -u ec2-user python3.12 $ORCHESTRATOR_ARGS"
+sudo -u ec2-user python3.12 $ORCHESTRATOR_ARGS
 
 ORCHESTRATOR_EXIT_CODE=$?
 echo "Orchestrator completed with exit code: $ORCHESTRATOR_EXIT_CODE"
