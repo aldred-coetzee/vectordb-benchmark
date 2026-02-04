@@ -8,8 +8,6 @@
 # - Pulls latest code before running
 # - Uploads results to S3
 
-set -e  # Exit on error
-
 # =============================================================================
 # Configuration (populated by orchestrator)
 # =============================================================================
@@ -21,22 +19,7 @@ PULL_LATEST="{{PULL_LATEST}}"     # e.g., "" or "kdbai" or "all"
 MAX_RUNTIME_MINUTES=120           # Safety timeout
 
 # =============================================================================
-# Auto-termination setup
-# =============================================================================
-
-# Option 3: Safety net - terminate after max runtime no matter what
-sudo shutdown -h +${MAX_RUNTIME_MINUTES}
-
-# Option 2: Trap - shutdown on any exit (success, error, or signal)
-cleanup() {
-    echo "Cleaning up and shutting down..."
-    sudo shutdown -c 2>/dev/null || true  # Cancel scheduled shutdown
-    sudo shutdown -h now
-}
-trap cleanup EXIT
-
-# =============================================================================
-# Logging
+# Logging (set up FIRST so we capture everything)
 # =============================================================================
 LOGFILE="/tmp/benchmark.log"
 exec > >(tee -a "$LOGFILE") 2>&1
@@ -47,6 +30,36 @@ echo "Database: $DATABASE"
 echo "Dataset: $DATASET"
 echo "Run ID: $RUN_ID"
 echo "========================================"
+
+# =============================================================================
+# Auto-termination setup (set up EARLY to catch all exits)
+# =============================================================================
+S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${RUN_ID}/jobs/${DATABASE}-${DATASET}"
+
+cleanup() {
+    EXIT_CODE=$?
+    echo "Cleaning up... (exit code: $EXIT_CODE)"
+
+    # Upload log file even on failure
+    aws s3 cp "$LOGFILE" ${S3_RESULT_PATH}/worker.log --region us-west-2 || true
+
+    # Mark as failed if non-zero exit
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo "{\"status\": \"failed\", \"exit_code\": $EXIT_CODE}" | \
+            aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2 || true
+    fi
+
+    echo "Shutting down..."
+    sudo shutdown -c 2>/dev/null || true
+    sudo shutdown -h now
+}
+trap cleanup EXIT
+
+# Safety net - terminate after max runtime no matter what
+sudo shutdown -h +${MAX_RUNTIME_MINUTES}
+
+# Now enable exit on error (after trap is set)
+set -e
 
 # =============================================================================
 # Fetch credentials from S3 (for KDB.AI)
@@ -121,25 +134,14 @@ echo "Benchmark completed with exit code: $BENCHMARK_EXIT_CODE"
 # =============================================================================
 echo "Uploading results to S3..."
 
-S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${RUN_ID}/jobs/${DATABASE}-${DATASET}"
-
 # Upload result files
 aws s3 cp results/ ${S3_RESULT_PATH}/ --recursive --region us-west-2
 
-# Upload log file
-aws s3 cp "$LOGFILE" ${S3_RESULT_PATH}/worker.log --region us-west-2
-
-# Mark job as complete or failed
-if [ $BENCHMARK_EXIT_CODE -eq 0 ]; then
-    echo '{"status": "completed"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
-else
-    echo "{\"status\": \"failed\", \"exit_code\": $BENCHMARK_EXIT_CODE}" | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
-fi
+# Mark job as complete
+echo '{"status": "completed"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
 
 echo "========================================"
 echo "Worker complete: $(date)"
 echo "========================================"
 
-# Option 1: Explicit shutdown (trap will also fire, but that's fine)
-sudo shutdown -c 2>/dev/null || true
-sudo shutdown -h now
+# Exit cleanly - trap will handle shutdown and final log upload
