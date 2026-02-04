@@ -258,7 +258,7 @@ Worker AMI contains:
 ### S3 Structure
 
 ```
-s3://<bucket-name>/
+s3://vectordb-benchmark-590780615264/
   runs/
     2024-02-03-1430/
       config.json          # What to run (databases, datasets, timeouts)
@@ -353,27 +353,35 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 **No instances running when idle** — all auto-terminate after completion.
 
-### Current Constraints
-
-- **No CLI EC2 create**: Org policy blocks programmatic launch
-- **Console launch**: Manually start orchestrator via AWS Console for now
-- **Future**: Request programmatic access to automate fully
-
 ### AWS Setup Progress
 
-**AWS Profile**: TBD (new account)
+**AWS Profile**: `vectordb` (SSO)
+**Region**: `us-west-2` (Oregon)
 
-**TODO** (starting fresh with new AWS account):
-- [ ] Configure AWS CLI profile
-- [ ] Create VPC (10.0.0.0/16)
-- [ ] Create public subnet (10.0.1.0/24)
-- [ ] Create and attach Internet Gateway
-- [ ] Configure route table (0.0.0.0/0 → IGW)
-- [ ] Create security group (SSH restricted, self-referencing for worker comms)
-- [ ] Create key pair (`vectordb-benchmark`)
-- [ ] Create S3 bucket for results
-- [ ] Create IAM role with EC2 trust + S3 access
-- [ ] Test EC2 launch
+**Tagging Convention** (all resources):
+| Key | Value |
+|-----|-------|
+| `Owner` | `acoetzee` |
+| `Project` | `vectordb-benchmark` |
+
+**VPC & Networking** (created):
+| Resource | Name | ID | Details |
+|----------|------|-----|---------|
+| VPC | vectordb-benchmark | vpc-04b7bfbbe10306a9d | 10.3.0.0/16 |
+| Subnet | vectordb-benchmark-public | subnet-08871c182a622a9e9 | 10.3.1.0/24, us-west-2a |
+| Internet Gateway | vectordb-benchmark-igw | igw-0134919a8af2d1869 | Attached to VPC |
+| Route Table | vectordb-benchmark-rt | (default for VPC) | 0.0.0.0/0 → IGW |
+| Security Group | vectordb-benchmark-sg | sg-0fe6723dd1004558d | SSH (22) restricted to admin IP |
+
+**Other Resources** (created):
+- [x] Key pair: `vectordb-benchmark` (stored at `~/.ssh/vectordb-benchmark.pem`)
+- [x] S3 bucket: `vectordb-benchmark-590780615264` (us-west-2)
+- [x] IAM role: `vectordb-benchmark-role` (EC2 trust, AmazonS3FullAccess attached)
+
+**Completed**:
+- [x] Test EC2 launch (verified SSH access works)
+
+**Still TODO**:
 - [ ] Worker AMI (datasets + code + Docker images)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
