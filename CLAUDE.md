@@ -399,11 +399,13 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 **Completed**:
 - [x] Test EC2 launch (verified SSH access works)
 
-**In Progress**:
-- [ ] Worker AMI v1: `vectordb-benchmark-worker-v1` (SIFT-1M, GIST-1M, all Docker images)
-  - AMI builder instance: `i-0d804e31d6fc47696`
+**Completed**:
+- [x] Worker AMI v1: `ami-0f9bf04496aedd923` (`vectordb-benchmark-worker-v1`)
+  - Datasets: SIFT-1M, GIST-1M
+  - Docker images: Qdrant, Milvus, Weaviate, ChromaDB, Redis, pgvector, KDB.AI
 
 **Still TODO**:
+- [ ] Test Worker AMI (launch, run benchmark)
 - [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
 
