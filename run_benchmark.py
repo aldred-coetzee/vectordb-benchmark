@@ -14,7 +14,7 @@ Usage:
         --dataset sift --indexes flat,hnsw
 
     # Legacy interface (still supported)
-    python run_benchmark.py --database kdbai --dataset datasets/sift \
+    python run_benchmark.py --database kdbai --dataset data/sift \
         --container kdbai-bench --cpus 8 --memory 32
 """
 
@@ -288,7 +288,7 @@ def run_with_config(
 
         # Run benchmarks for each dataset
         for dataset_name, dataset_info in datasets_to_run.items():
-            dataset_path = Path(dataset_info.get("path", f"datasets/{dataset_name}"))
+            dataset_path = Path(dataset_info.get("path", f"data/{dataset_name}"))
 
             # Validate dataset exists
             if not dataset_path.exists():
@@ -436,7 +436,7 @@ def run_legacy(args: argparse.Namespace) -> None:
     dataset_path = Path(args.dataset)
     if not dataset_path.exists():
         print(f"Error: Dataset path not found: {dataset_path}")
-        print("Run 'python datasets/download_sift.py' to download the dataset.")
+        print("Run 'python data/download_sift.py' to download the dataset.")
         sys.exit(1)
 
     # Check for required files
@@ -444,7 +444,7 @@ def run_legacy(args: argparse.Namespace) -> None:
     for filename in required_files:
         if not (dataset_path / filename).exists():
             print(f"Error: Required file not found: {dataset_path / filename}")
-            print("Run 'python datasets/download_sift.py' to download the dataset.")
+            print("Run 'python data/download_sift.py' to download the dataset.")
             sys.exit(1)
 
     # Set default endpoint based on database type
@@ -579,11 +579,11 @@ Examples:
         --dataset sift --indexes flat,hnsw
 
     # Legacy interface
-    python run_benchmark.py --database kdbai --dataset datasets/sift \\
+    python run_benchmark.py --database kdbai --dataset data/sift \\
         --container kdbai-bench
 
     # Download dataset first
-    python datasets/download_sift.py --output datasets
+    python data/download_sift.py --output data
         """,
     )
 

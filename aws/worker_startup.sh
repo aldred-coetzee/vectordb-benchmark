@@ -93,6 +93,10 @@ git config --global --add safe.directory /app/vectordb-benchmark
 
 git pull origin main
 
+# Create symlink so relative paths in benchmark.yaml work
+# (config uses "data/sift", AMI has datasets at "/data/sift")
+ln -sf /data /app/vectordb-benchmark/data
+
 # =============================================================================
 # Pull fresh Docker images if requested
 # =============================================================================

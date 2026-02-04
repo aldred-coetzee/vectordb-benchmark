@@ -62,7 +62,8 @@ benchmark/
 
 configs/               # YAML configs per database (index params, efSearch sweeps)
 results/               # Benchmark output (CSV, JSON, HTML reports)
-datasets/              # SIFT-1M data files
+data/                  # Datasets (sift/, gist/) and DB runtime storage
+aws/                   # AWS orchestration (orchestrator.py, worker_startup.sh)
 ```
 
 ## Key Commands
@@ -399,38 +400,58 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 **Completed**:
 - [x] Test EC2 launch (verified SSH access works)
 - [x] Worker AMI v1: `ami-0f9bf04496aedd923` (`vectordb-benchmark-worker-v1`)
-  - Datasets: SIFT-1M, GIST-1M
+  - Datasets: SIFT-1M, GIST-1M at `/data/`
   - Docker images: Qdrant, Milvus, Weaviate, ChromaDB, Redis, pgvector, KDB.AI
-- [x] Test Worker AMI (Qdrant benchmark successful on SIFT-1M)
-- [x] Standardized dataset path to `/data/` (no symlinks needed)
 - [x] Refactored `SIFTDataset` → `TexmexDataset` (auto-detects dataset name from directory)
+- [x] Standardized dataset paths to `data/` (relative paths, symlinked to `/data/` on AWS)
+- [x] Created `aws/worker_startup.sh` with auto-termination, S3 result upload, credential fetching
+- [x] Created `aws/orchestrator.py` for launching and monitoring worker instances
+- [x] Worker auto-termination implemented (trap on exit + scheduled shutdown)
 
 **Still TODO**:
-- [ ] Add worker auto-termination after benchmark completes
+- [ ] Create `aws/orchestrator_startup.sh` (runs orchestrator.py instead of single benchmark)
+- [ ] Create Launch Templates (orchestrator + worker) for easy team triggering
+- [ ] Run full benchmark suite (all 9 DBs on SIFT-1M and GIST-1M)
 - [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
 - [ ] Add GloVe-100 support (HDF5 format - needs h5py)
-- [ ] Orchestrator AMI
 - [ ] `run_aws.py` CLI implementation
-- [ ] EC2 Launch Template for easy team triggering
 
-### Planned: Team Trigger Mechanism
+**First Worker Test Results** (2026-02-04):
+- Qdrant on SIFT-1M: ✓ Completed successfully
+- Results uploaded to S3: `s3://vectordb-benchmark-590780615264/runs/2026-02-04-2117/jobs/qdrant-sift/`
+- Instance auto-terminated: ✓
+- HNSW efSearch=128: 381 QPS, 2.4ms p50 latency, 99.3% recall
 
-**Approach**: EC2 Launch Template (simplest)
-1. Create orchestrator AMI with startup script baked in
-2. Create Launch Template with pre-configured VPC/subnet/security group
-3. Team member: EC2 Console → Launch Templates → Select → Launch
-4. Orchestrator runs everything automatically, terminates when done
-5. Results appear in S3
+### Team Trigger Mechanism
+
+**Approach**: Single AMI, Two Launch Templates
+
+Use the **same Worker AMI** for both orchestrator and workers (simpler than maintaining two AMIs):
+
+| Launch Template | User Data | Purpose |
+|-----------------|-----------|---------|
+| `vectordb-benchmark-orchestrator` | `orchestrator_startup.sh` | Runs orchestrator.py, launches workers |
+| `vectordb-benchmark-worker` | `worker_startup.sh` | Runs single benchmark, uploads results |
+
+**Flow**:
+1. Team member: EC2 Console → Launch Templates → `vectordb-benchmark-orchestrator` → Launch
+2. Orchestrator instance starts, runs `orchestrator.py`
+3. Orchestrator launches worker instances (using worker Launch Template or direct API)
+4. Workers run benchmarks, upload results to S3, auto-terminate
+5. Orchestrator monitors completion, aggregates results, auto-terminates
+6. Results appear in S3
+
+**Why single AMI works**: Worker AMI already has Python, boto3, codebase, and IAM role - everything the orchestrator needs.
 
 **Future possibility**: Web UI app on top for even easier triggering and result viewing.
 
 ### Next Steps (Priority Order)
 
-1. **Build Orchestrator** — Create `aws/worker_startup.sh` with auto-termination, orchestrator script to launch workers
-2. **Create Orchestrator AMI** — Bake in orchestrator script, create Launch Template
-3. **End-to-End Test** — Trigger via Launch Template, verify full flow works
+1. ~~**Build Orchestrator**~~ ✓ — Created `aws/worker_startup.sh` and `aws/orchestrator.py`
+2. ~~**Verify Worker End-to-End**~~ ✓ — First test completed, results in S3, auto-terminated
+3. **Create Launch Templates** — Using single Worker AMI for both orchestrator and workers
 4. **Run All Databases** — Benchmark all 9 DBs on SIFT-1M and GIST-1M, generate comparison report
-5. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), Web UI
+5. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
@@ -458,6 +479,9 @@ Design consideration: Keep dataset/query loading modular so filtered queries can
 
 ### Dataset Paths
 
-All datasets use `/data/` as the base path (configured in `benchmark.yaml`):
-- `/data/sift/` — SIFT-1M (sift_base.fvecs, sift_query.fvecs, sift_groundtruth.ivecs)
-- `/data/gist/` — GIST-1M (gist_base.fvecs, gist_query.fvecs, gist_groundtruth.ivecs)
+Datasets use relative `data/` paths (configured in `benchmark.yaml`):
+- `data/sift/` — SIFT-1M (sift_base.fvecs, sift_query.fvecs, sift_groundtruth.ivecs)
+- `data/gist/` — GIST-1M (gist_base.fvecs, gist_query.fvecs, gist_groundtruth.ivecs)
+
+**Local**: Datasets stored in project `data/` directory
+**AWS**: Worker startup script creates symlink `data -> /data` (AMI has datasets at `/data/`)

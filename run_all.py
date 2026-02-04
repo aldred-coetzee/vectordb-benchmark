@@ -254,7 +254,7 @@ def run_single_benchmark(
 
         # Run for each dataset
         for dataset_name, dataset_info in datasets_to_run.items():
-            dataset_path = Path(dataset_info.get("path", f"datasets/{dataset_name}"))
+            dataset_path = Path(dataset_info.get("path", f"data/{dataset_name}"))
             if not dataset_path.exists():
                 print(f"Warning: Dataset not found: {dataset_path}, skipping")
                 continue

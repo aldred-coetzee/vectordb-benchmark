@@ -3,11 +3,11 @@
 
 datasets:
   sift:
-    path: /data/sift
+    path: data/sift
     vectors: 1000000
     dimensions: 128
   gist:
-    path: /data/gist
+    path: data/gist
     vectors: 1000000
     dimensions: 960
 
