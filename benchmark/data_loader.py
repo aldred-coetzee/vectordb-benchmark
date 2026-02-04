@@ -91,29 +91,32 @@ def read_ivecs(filename: str) -> np.ndarray:
     return _read_vecs(filename, np.int32)
 
 
-class SIFTDataset:
-    """SIFT-1M dataset loader."""
+class TexmexDataset:
+    """Generic Texmex dataset loader (SIFT, GIST, etc.)."""
 
-    def __init__(self, dataset_path: str):
+    def __init__(self, dataset_path: str, name: str | None = None):
         """
-        Initialize the SIFT dataset loader.
+        Initialize the dataset loader.
 
         Args:
-            dataset_path: Path to the sift directory containing the dataset files
+            dataset_path: Path to the dataset directory containing the files
+            name: Dataset name (e.g., 'sift', 'gist'). If None, inferred from directory name.
         """
         self.path = Path(dataset_path)
         if not self.path.exists():
             raise FileNotFoundError(f"Dataset path not found: {dataset_path}")
 
+        # Infer dataset name from directory if not provided
+        self.name = name or self.path.name
         self._base_vectors = None
         self._query_vectors = None
         self._ground_truth = None
 
     @property
     def base_vectors(self) -> np.ndarray:
-        """Load and return base vectors (1M vectors, 128 dims)."""
+        """Load and return base vectors."""
         if self._base_vectors is None:
-            base_file = self.path / "sift_base.fvecs"
+            base_file = self.path / f"{self.name}_base.fvecs"
             print(f"Loading base vectors from {base_file}...")
             self._base_vectors = read_fvecs(str(base_file))
             print(f"Loaded {len(self._base_vectors):,} base vectors")
@@ -121,9 +124,9 @@ class SIFTDataset:
 
     @property
     def query_vectors(self) -> np.ndarray:
-        """Load and return query vectors (10K vectors, 128 dims)."""
+        """Load and return query vectors."""
         if self._query_vectors is None:
-            query_file = self.path / "sift_query.fvecs"
+            query_file = self.path / f"{self.name}_query.fvecs"
             print(f"Loading query vectors from {query_file}...")
             self._query_vectors = read_fvecs(str(query_file))
             print(f"Loaded {len(self._query_vectors):,} query vectors")
@@ -131,9 +134,9 @@ class SIFTDataset:
 
     @property
     def ground_truth(self) -> np.ndarray:
-        """Load and return ground truth (10K x 100 nearest neighbor IDs)."""
+        """Load and return ground truth nearest neighbor IDs."""
         if self._ground_truth is None:
-            gt_file = self.path / "sift_groundtruth.ivecs"
+            gt_file = self.path / f"{self.name}_groundtruth.ivecs"
             print(f"Loading ground truth from {gt_file}...")
             self._ground_truth = read_ivecs(str(gt_file))
             print(f"Loaded ground truth with shape {self._ground_truth.shape}")
@@ -157,7 +160,7 @@ class SIFTDataset:
     def get_info(self) -> dict:
         """Return dataset information."""
         return {
-            "name": "SIFT-1M",
+            "name": self.name.upper(),
             "num_base_vectors": self.num_base_vectors,
             "num_query_vectors": self.num_query_vectors,
             "dimensions": self.dimensions,
@@ -171,7 +174,6 @@ class SIFTDataset:
         This triggers lazy loading of the base vectors if not already loaded.
         Useful for ensuring data is loaded before timing-sensitive operations.
         """
-        # Access the property to trigger lazy loading
         _ = self.base_vectors
 
     def get_batches(
@@ -192,3 +194,7 @@ class SIFTDataset:
             ids = np.arange(start_idx, end_idx, dtype=np.int64)
             vectors = self.base_vectors[start_idx:end_idx]
             yield start_idx, ids, vectors
+
+
+# Backwards compatibility alias
+SIFTDataset = TexmexDataset
