@@ -96,9 +96,9 @@ cd /app/vectordb-benchmark
 ln -sf /data /app/vectordb-benchmark/data 2>/dev/null || true
 
 # Install Python packages needed for report generation
-# (report_generator → config (yaml) → db → runner (numpy) → docker_monitor (docker))
+# (report_generator → config (yaml))
 echo "Installing report generation dependencies..."
-pip3.12 install pyyaml numpy docker 2>&1 | tail -1
+pip3.12 install pyyaml 2>&1 | tail -1
 
 # =============================================================================
 # Run orchestrator

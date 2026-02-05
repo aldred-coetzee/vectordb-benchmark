@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .runner import BenchmarkResults, IngestResult, SearchResult
+from .results import BenchmarkResults, IngestResult, SearchResult
 
 
 # Default database path

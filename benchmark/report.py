@@ -6,7 +6,7 @@ from typing import List
 
 import matplotlib.pyplot as plt
 
-from .runner import BenchmarkResults, IngestResult, SearchResult
+from .results import BenchmarkResults, IngestResult, SearchResult
 
 
 def format_memory(gb: float) -> str:
