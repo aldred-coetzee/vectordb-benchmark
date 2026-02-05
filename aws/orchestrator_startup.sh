@@ -82,20 +82,13 @@ sudo shutdown -h +${MAX_RUNTIME_MINUTES}
 set -e
 
 # =============================================================================
-# Pull latest code
+# Setup
 # =============================================================================
-echo "Pulling latest code..."
+# git pull already done by user-data before this script runs
 cd /app/vectordb-benchmark
 
-git config --global --add safe.directory /app/vectordb-benchmark
-git pull origin main
-
-# Create symlink so relative paths work
-ln -sf /data /app/vectordb-benchmark/data
-
-# Install boto3 (not in AMI, added to requirements.txt after AMI was built)
-echo "Installing boto3..."
-sudo -u ec2-user pip3.12 install boto3 --quiet
+# Create symlink so relative paths work (datasets at /data on worker AMI)
+ln -sf /data /app/vectordb-benchmark/data 2>/dev/null || true
 
 # =============================================================================
 # Run orchestrator
