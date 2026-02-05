@@ -147,15 +147,14 @@ echo "Benchmark completed with exit code: $BENCHMARK_EXIT_CODE"
 # =============================================================================
 echo "Uploading results to S3..."
 
-# Upload result files (may not exist if database had no supported indexes)
+# Upload result files and set status based on what was produced
 if [ -d results/ ] && [ "$(ls -A results/)" ]; then
     aws s3 cp results/ ${S3_RESULT_PATH}/ --recursive --region us-west-2
+    echo '{"status": "completed"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
 else
-    echo "No results to upload (database may not support requested index types)"
+    echo "No results produced (database may not support requested index types)"
+    echo '{"status": "skipped", "reason": "no results produced"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
 fi
-
-# Mark job as complete
-echo '{"status": "completed"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
 
 echo "========================================"
 echo "Worker complete: $(date)"

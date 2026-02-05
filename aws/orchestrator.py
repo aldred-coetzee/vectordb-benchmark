@@ -152,7 +152,7 @@ def wait_for_completion(
         all_done = True
 
         for database, dataset in jobs:
-            if results[(database, dataset)] in ("completed", "failed"):
+            if results[(database, dataset)] in ("completed", "failed", "skipped"):
                 continue
 
             status = check_job_status(s3_client, run_id, database, dataset)
@@ -166,9 +166,16 @@ def wait_for_completion(
 
         # Print status update
         completed = sum(1 for s in results.values() if s == "completed")
+        skipped = sum(1 for s in results.values() if s == "skipped")
         failed = sum(1 for s in results.values() if s == "failed")
         pending = sum(1 for s in results.values() if s == "pending")
-        print(f"  Status: {completed} completed, {failed} failed, {pending} pending")
+        parts = [f"{completed} completed"]
+        if skipped:
+            parts.append(f"{skipped} skipped")
+        if failed:
+            parts.append(f"{failed} failed")
+        parts.append(f"{pending} pending")
+        print(f"  Status: {', '.join(parts)}")
 
         time.sleep(30)  # Check every 30 seconds
 
@@ -317,12 +324,20 @@ def main():
     print("=" * 60)
 
     completed = [(db, ds) for (db, ds), s in results.items() if s == "completed"]
+    skipped = [(db, ds) for (db, ds), s in results.items() if s == "skipped"]
     failed = [(db, ds) for (db, ds), s in results.items() if s == "failed"]
     pending = [(db, ds) for (db, ds), s in results.items() if s == "pending"]
 
     print(f"Completed: {len(completed)}")
+    if skipped:
+        print(f"Skipped:   {len(skipped)} (no supported index types)")
     print(f"Failed:    {len(failed)}")
     print(f"Pending:   {len(pending)} (timed out)")
+
+    if skipped:
+        print("\nSkipped jobs (no supported index types):")
+        for db, ds in skipped:
+            print(f"  - {db}/{ds}")
 
     if failed:
         print("\nFailed jobs:")
