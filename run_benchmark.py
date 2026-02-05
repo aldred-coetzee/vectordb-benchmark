@@ -30,6 +30,7 @@ warnings.filterwarnings("once")
 
 import argparse
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -260,15 +261,29 @@ def run_with_config(
     # Initialize database client
     client = None
     db = None
+    connect_params = config.get("params", {})
 
     try:
         print(f"\nConnecting to {database_name}...")
         try:
             client = get_client(database_name)
-            if endpoint:
-                client.connect(endpoint=endpoint)
-            else:
-                client.connect()
+            # Retry connection — container may need time after health check passes
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    if endpoint:
+                        client.connect(endpoint=endpoint, **connect_params)
+                    else:
+                        client.connect(**connect_params)
+                    break
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait = 2 ** attempt  # 1, 2, 4, 8 seconds
+                        print(f"  Connection attempt {attempt + 1} failed: {e}")
+                        print(f"  Retrying in {wait}s...")
+                        time.sleep(wait)
+                    else:
+                        raise
         except Exception as e:
             print(f"Error connecting to database: {e}")
             raise
@@ -503,12 +518,21 @@ def run_legacy(args: argparse.Namespace) -> None:
 
     # Initialize database client
     print(f"\nConnecting to {args.database}...")
-    try:
-        client = get_client(args.database)
-        client.connect(endpoint=args.endpoint)
-    except Exception as e:
-        print(f"Error connecting to database: {e}")
-        sys.exit(1)
+    client = get_client(args.database)
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            client.connect(endpoint=args.endpoint)
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
+                print(f"  Connection attempt {attempt + 1} failed: {e}")
+                print(f"  Retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                print(f"Error connecting to database after {max_retries} attempts: {e}")
+                sys.exit(1)
 
     # Initialize SQLite database
     db = BenchmarkDatabase()
