@@ -97,6 +97,11 @@ Examples:
         if args.db_path is None:
             args.db_path = "results/benchmark.db"
 
+    # Auto-detect format from output file extension
+    if args.output and args.format == "markdown":
+        if args.output.endswith(".html"):
+            args.format = "html"
+
     # Validate database file exists
     if not Path(args.db_path).exists():
         print(f"Error: Database not found: {args.db_path}", file=sys.stderr)
