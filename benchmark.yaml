@@ -56,4 +56,4 @@ search:
   k: 10
   num_queries: 10000
   warmup: 100
-  batch_size: 5000
+  batch_size: 50000
