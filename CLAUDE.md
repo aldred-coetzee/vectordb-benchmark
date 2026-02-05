@@ -414,7 +414,10 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 **Other Resources** (created):
 - [x] Key pair: `vectordb-benchmark` (stored at `~/.ssh/vectordb-benchmark.pem`)
 - [x] S3 bucket: `vectordb-benchmark-590780615264` (us-west-2)
-- [x] IAM role: `vectordb-benchmark-role` (EC2 trust, AmazonS3FullAccess + vectordb-benchmark-passrole attached)
+- [x] IAM role: `vectordb-benchmark-role` (EC2 trust, 3 policies attached):
+  - `AmazonS3FullAccess` — S3 read/write for results and config
+  - `vectordb-benchmark-passrole` — pass IAM role to worker instances
+  - `vectordb-benchmark-ec2` — RunInstances, DescribeInstances, DescribeTags, CreateTags
 - [x] S3 config files: `config/kc.lic` (KDB.AI license), `config/docker-config.json` (KDB.AI registry creds)
 
 **Completed**:
@@ -430,12 +433,20 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 **Still TODO**:
 - [x] Create `aws/orchestrator_startup.sh` (runs orchestrator.py instead of single benchmark)
-- [x] Create Launch Template (`vectordb-benchmark-full`) for full benchmark runs
-- [x] Add `iam:PassRole` permission to IAM role (managed policy: `vectordb-benchmark-passrole`)
+- [x] Create Launch Template (`vectordb-benchmark-full`)
+- [x] Add `iam:PassRole` permission (managed policy: `vectordb-benchmark-passrole`)
+- [x] Add EC2 permissions (managed policy: `vectordb-benchmark-ec2`)
 - [x] Build Orchestrator AMI: `ami-09ed5dd071675cfef` (`vectordb-benchmark-orchestrator-v1`)
-- [x] Update Launch Template to use Orchestrator AMI (version 7)
+- [x] Update Launch Template to use Orchestrator AMI (version 10)
 - [x] Add Name/Owner/Project tags to worker instances in `orchestrator.py`
-- [ ] Run full benchmark suite (all 9 DBs on SIFT-1M and GIST-1M)
+- [x] Fix IMDSv2 token for tag reading on AL2023
+- [x] Fix user-data to git pull then run local script (avoid GitHub CDN caching)
+- [x] Orchestrator self-tags with run ID (`vectordb-orchestrator-{run-id}`)
+- [x] Test full orchestrator flow (qdrant/sift minimal test — passed)
+- [ ] Run full benchmark suite — first run `2026-02-05-0902` partial (see known issues below)
+- [ ] Fix Redis/pgvector/KDB.AI container startup failures
+- [ ] Re-run gist dataset after filename fix
+- [ ] Generate comparison report from results
 - [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
 - [ ] Add GloVe-100 support (HDF5 format - needs h5py)
 - [ ] (Optional) Streamlit UI if team usage increases
@@ -447,9 +458,12 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - HNSW efSearch=128: 381 QPS, 2.4ms p50 latency, 99.3% recall
 
 **Implementation Notes**:
-- Orchestrator AMI has boto3 pre-installed (no startup workaround needed)
-- Worker AMI does NOT have boto3 (not needed — workers don't use boto3 directly, worker_startup.sh uses AWS CLI)
+- Orchestrator AMI has boto3 pre-installed; Worker AMI uses AWS CLI only (no boto3 needed)
 - `orchestrator.py` Session handling: tries `profile_name="vectordb"` (local SSO), falls back to default (EC2 IAM role)
+- AL2023 requires IMDSv2 tokens for instance metadata (plain curl returns empty)
+- User-data does `git pull` then runs local script to avoid GitHub CDN caching issues
+- Orchestrator self-tags with `vectordb-orchestrator-{run-id}` after generating run ID
+- Workers tagged with Name, Owner, Project, RunId, Database, Dataset at launch
 
 ### Triggering Benchmarks
 
@@ -462,12 +476,13 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 #### Method 1: Launch Template (Full Run)
 
-One Launch Template: `vectordb-benchmark-full` (version 7)
+One Launch Template: `vectordb-benchmark-full` (version 10)
 - Instance type: t3.small (orchestrator)
 - AMI: `ami-09ed5dd071675cfef` (Orchestrator AMI)
 - IAM profile: vectordb-benchmark-role
 - Instance tags: Name=`vectordb-orchestrator`, Owner=`acoetzee`, Project=`vectordb-benchmark`
-- User-data: fetches and runs `aws/orchestrator_startup.sh` from GitHub
+- User-data: `git pull` then runs local `aws/orchestrator_startup.sh`
+- Orchestrator self-tags with run ID after startup
 - Runs all 9 databases on sift + gist datasets
 - Fire and forget - just launch and check S3 later
 
@@ -485,7 +500,7 @@ One Launch Template: `vectordb-benchmark-full` (version 7)
 4. Orchestrator monitors, then auto-terminates
 5. Results in `s3://vectordb-benchmark-590780615264/runs/{run-id}/`
 
-**IAM PassRole**: ✓ Resolved — managed policy `vectordb-benchmark-passrole` attached to role.
+**Subset Runs**: Add `Databases` and `Datasets` tags to the instance to override defaults (e.g., `Databases=qdrant,milvus`).
 
 #### Method 2: CLI (Custom Runs)
 
@@ -514,16 +529,24 @@ python aws/orchestrator.py
 
 ### Next Steps (Priority Order)
 
-1. ~~**Build Orchestrator**~~ ✓ — Created `aws/worker_startup.sh` and `aws/orchestrator.py`
-2. ~~**Verify Worker End-to-End**~~ ✓ — First test completed, results in S3, auto-terminated
-3. ~~**Create Launch Template**~~ ✓ — `vectordb-benchmark-full` (version 6)
-4. ~~**Add IAM PassRole Permission**~~ ✓ — Managed policy `vectordb-benchmark-passrole` attached
-5. ~~**Build Orchestrator AMI**~~ ✓ — `ami-09ed5dd071675cfef` (Python 3.12, boto3, git, ~3GB)
-6. ~~**Update Launch Template**~~ ✓ — Version 7: orchestrator AMI + Name/Owner/Project tags
-7. ~~**Fix Worker Name Tags**~~ ✓ — Workers tagged with Name, Owner, Project, RunId, Database, Dataset
-8. **Test Full Orchestrator Flow** — Verify end-to-end with IAM fix + new AMI
-9. **Run All Databases** — Benchmark all 9 DBs on SIFT-1M and GIST-1M, generate comparison report
-10. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
+1. ~~**Build Orchestrator**~~ ✓
+2. ~~**Verify Worker End-to-End**~~ ✓
+3. ~~**Create Launch Template**~~ ✓ — version 10
+4. ~~**Add IAM Permissions**~~ ✓ — PassRole + EC2 policies
+5. ~~**Build Orchestrator AMI**~~ ✓ — `ami-09ed5dd071675cfef`
+6. ~~**Update Launch Template**~~ ✓ — Orchestrator AMI + tags + git-based user-data
+7. ~~**Fix Worker Name Tags**~~ ✓
+8. ~~**Test Full Orchestrator Flow**~~ ✓ — Minimal test (qdrant/sift) passed
+9. **Run All Databases** — **IN PROGRESS** (run `2026-02-05-0902`)
+10. **Generate Comparison Report** — From S3 results
+11. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
+
+### Known Issues (from first full run 2026-02-05-0902)
+
+1. **Gist dataset skipped** (FIXED) — `run_benchmark.py` hardcoded `sift_base.fvecs` instead of using dataset name. Fix pushed in `3426e8c`.
+2. **KDB.AI license not found** — `KDB_LICENSE_B64` env var set in worker shell but not passed to Docker container. Needs fix in kdbai config/startup.
+3. **Redis connection refused** — Container starts but connection reset. May need longer health check wait or startup delay.
+4. **pgvector connection refused** — Same pattern as Redis. Container not ready when benchmark tries to connect.
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
