@@ -508,6 +508,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Skipped job status**: Databases with no supported indexes (LanceDB) now get `status: skipped` instead of `failed`. Worker handles missing results dir gracefully, orchestrator shows skipped separately.
 - **pull_run.py**: Single command to pull AWS run results from S3, merge per-job DBs, and generate a named report. Usage: `python scripts/pull_run.py 2026-02-05-1816`. Output: `results/benchmark-{run_id}.db` + `results/report-{run_id}.html`. All merged runs share a `run_label` column for traceability.
 - **Batch search resilience**: Batch search failures are now non-fatal — sequential results are preserved even if batch search times out or errors (bugs #12-14).
+- **Auto report in S3**: Orchestrator now generates a merged report after all jobs complete and uploads `report.html` + `benchmark.db` to `s3://{bucket}/runs/{run_id}/`. Startup script installs pyyaml/numpy/docker (needed for report generator import chain).
 
 **Run 2026-02-05-1816** (6 DBs × sift + gist, excludes pgvector + LanceDB):
 - 12/16 jobs completed with data. Qdrant empty (bugs #12-14, fixed). LanceDB skipped (expected).
