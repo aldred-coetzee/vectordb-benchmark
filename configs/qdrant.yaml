@@ -28,7 +28,7 @@ metadata:
   persistence: disk
   license: Apache-2.0
   url: https://qdrant.tech
-  notes: "gRPC + REST. Flat index uses exact=True search flag (not a separate index). Insert batch size auto-limited to stay under 32MB HTTP payload."
+  notes: "gRPC + REST. Flat index uses exact=True search flag (not a separate index). Insert uses JSON over HTTP — batch size must account for ~12 bytes/float in JSON (not 4 bytes binary) to stay under 32MB payload limit."
 
 # Qdrant-specific parameters
 params:
