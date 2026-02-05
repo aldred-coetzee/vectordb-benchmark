@@ -1,15 +1,24 @@
 # Shared Benchmark Configuration
 # This file defines datasets, index types, and search parameters for all databases
 
+# =============================================================================
+# Datasets
+# =============================================================================
+# Each dataset includes base vectors, query vectors, and ground truth neighbors.
+# Ground truth enables recall calculation without brute-force recomputation.
+
 datasets:
   sift:
     path: data/sift
     vectors: 1000000
     dimensions: 128
+    description: "SIFT-1M: 1M image descriptors, 128D. Baseline benchmark — moderate dimensionality, well-studied."
+
   gist:
     path: data/gist
     vectors: 1000000
     dimensions: 960
+    description: "GIST-1M: 1M image descriptors, 960D. High-dimension stress test — exposes payload limits and curse of dimensionality."
 
   # Dev datasets — small subsets for fast iteration (NOT for benchmarking)
   # Generate with: python scripts/generate_dev_datasets.py
@@ -17,19 +26,42 @@ datasets:
     path: data/sift-dev
     vectors: 10000
     dimensions: 128
+    description: "Dev subset of SIFT-1M (10K vectors, 100 queries). For code testing only — NOT representative of production performance."
+
   gist-dev:
     path: data/gist-dev
     vectors: 10000
     dimensions: 960
+    description: "Dev subset of GIST-1M (10K vectors, 100 queries). For code testing only — NOT representative of production performance."
+
+# =============================================================================
+# Index Types
+# =============================================================================
+# Each database builds these indexes and runs search at each efSearch value.
+# This produces a recall-vs-QPS tradeoff curve per database.
 
 indexes:
   flat:
-    # Flat index (brute-force exact search)
-    # No additional parameters required
+    # Brute-force exact search — compares query against every vector.
+    # Purpose: Establishes ground-truth recall baseline (should be ~100%)
+    # and measures raw scan throughput without index overhead.
+    # Slow on large datasets but guarantees perfect accuracy.
     params: {}
 
   hnsw:
-    # Hierarchical Navigable Small World index
+    # Hierarchical Navigable Small World graph — the dominant ANN index type.
+    # Builds a multi-layer proximity graph at ingest time.
+    #
+    # Build parameters:
+    #   M: Max edges per node. Higher = better recall, more memory, slower build.
+    #     Typical range: 8-64. We use 16 (standard baseline).
+    #   efConstruction: Beam width during graph build. Higher = better graph quality.
+    #     Typical range: 32-512. We use 64 (standard baseline).
+    #
+    # Search parameter:
+    #   efSearch: Beam width during search. Higher = better recall, slower search.
+    #     Swept across values to produce recall-vs-QPS tradeoff curve.
+    #     Values below k (num results) are skipped by some databases.
     M: 16
     efConstruction: 64
     efSearch:
@@ -39,21 +71,28 @@ indexes:
       - 256
 
   ivf:
-    # Placeholder for IVF index
+    # Placeholder for Inverted File index (not yet implemented)
+    # Partitions vectors into clusters; searches only nearby clusters.
     # nlist: 100
     # nprobe: [1, 5, 10, 20]
     params: {}
 
   ivfpq:
-    # Placeholder for IVF with Product Quantization
+    # Placeholder for IVF with Product Quantization (not yet implemented)
+    # Combines IVF partitioning with vector compression for memory efficiency.
     # nlist: 100
     # m: 8
     # nbits: 8
     # nprobe: [1, 5, 10, 20]
     params: {}
 
+# =============================================================================
+# Search Configuration
+# =============================================================================
+# Controls how search benchmarks are executed across all databases.
+
 search:
-  k: 10
-  num_queries: 10000
-  warmup: 100
-  batch_size: 50000
+  k: 10                 # Number of nearest neighbors to retrieve per query
+  num_queries: 10000    # Total queries to run (from dataset's query vectors)
+  warmup: 100           # Queries to run before timing (warms caches, JIT, etc.)
+  batch_size: 50000     # Ingest batch size (vectors per insert call)
