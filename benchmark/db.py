@@ -70,6 +70,10 @@ class BenchmarkDatabase:
             cursor.execute("ALTER TABLE runs ADD COLUMN duration_seconds REAL")
         except sqlite3.OperationalError:
             pass  # Column already exists
+        try:
+            cursor.execute("ALTER TABLE runs ADD COLUMN run_label TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
         # Create ingest_results table
         cursor.execute("""

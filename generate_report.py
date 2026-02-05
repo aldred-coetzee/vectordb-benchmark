@@ -66,8 +66,15 @@ Examples:
     )
 
     parser.add_argument(
+        "--run-id",
+        help="Orchestrator run ID (e.g., 2026-02-05-1816). "
+             "Auto-resolves db-path to results/benchmark-{run_id}.db "
+             "and output to results/report-{run_id}.html",
+    )
+
+    parser.add_argument(
         "--db-path",
-        default="results/benchmark.db",
+        default=None,
         help="Path to SQLite database (default: results/benchmark.db)",
     )
 
@@ -78,6 +85,17 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Resolve paths from --run-id if provided
+    if args.run_id:
+        if args.db_path is None:
+            args.db_path = f"results/benchmark-{args.run_id}.db"
+        if args.output is None:
+            ext = "html" if args.format == "html" else "md"
+            args.output = f"results/report-{args.run_id}.{ext}"
+    else:
+        if args.db_path is None:
+            args.db_path = "results/benchmark.db"
 
     # Validate database file exists
     if not Path(args.db_path).exists():
