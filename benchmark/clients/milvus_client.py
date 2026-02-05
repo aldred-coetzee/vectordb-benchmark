@@ -174,14 +174,17 @@ class MilvusClient(BaseVectorDBClient):
         try:
             collection = Collection(table_name)
 
-            # Prepare data
-            entities = [
-                ids.tolist(),
-                vectors.tolist(),
-            ]
+            # Batch inserts to stay under Milvus gRPC message size limit (64MB)
+            dims = vectors.shape[1] if len(vectors.shape) > 1 else 128
+            max_payload_bytes = 50_000_000  # 50MB conservative
+            bytes_per_vector = dims * 4 + 50  # float32 + overhead
+            batch_size = max(100, min(len(ids), max_payload_bytes // bytes_per_vector))
 
-            # Insert
-            collection.insert(entities)
+            for i in range(0, len(ids), batch_size):
+                batch_ids = ids[i:i + batch_size].tolist()
+                batch_vectors = vectors[i:i + batch_size].tolist()
+                entities = [batch_ids, batch_vectors]
+                collection.insert(entities)
 
             # Flush to ensure data is persisted
             collection.flush()
