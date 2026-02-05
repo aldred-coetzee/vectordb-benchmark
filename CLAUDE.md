@@ -17,6 +17,7 @@ allowedTools: ["Bash(*)", "Edit", "Write", "Read", "Glob", "Grep", "WebFetch", "
 - New DB clients must implement `BaseVectorDBClient` interface
 - Keep benchmark configs in `configs/*.yaml`
 - Results go in `results/` — never commit large result files (.csv, .json with data)
+- When discovering noteworthy database quirks (payload limits, index behavior, API oddities), update the `metadata.notes` field in the relevant `configs/*.yaml` — these surface in generated reports
 
 ### Public Release Consideration
 This project may be shared publicly so others can verify benchmarks independently. Design with this in mind:
@@ -488,6 +489,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Dev datasets**: 10K vectors / 100 queries for ~12s smoke tests (`--dataset sift-dev`)
 - **KDB.AI THREADS**: Set to 16 (was 4) to match available CPU cores per [docs](https://code.kx.com/kdbai/latest/reference/multithreading.html)
 - **Worker instances**: Upgraded from m5.2xlarge (8 CPU, 32GB) to m5.4xlarge (16 CPU, 64GB) — matches local benchmark config (cpus: 16, memory: 64g)
+- **Database notes**: All 9 configs have `metadata.notes` documenting benchmark-relevant quirks (payload limits, index types, protocol caveats)
 
 **First Worker Test Results** (2026-02-04):
 - Qdrant on SIFT-1M: Completed successfully
