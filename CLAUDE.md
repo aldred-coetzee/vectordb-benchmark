@@ -488,6 +488,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **efSearch sweep**: Trimmed from [8,16,32,64,128,256] to [32,64,128,256] — lower values have unusable recall
 - **Dev datasets**: 10K vectors / 100 queries for ~12s smoke tests (`--dataset sift-dev`)
 - **KDB.AI THREADS**: Set to 16 (was 4) to match available CPU cores per [docs](https://code.kx.com/kdbai/latest/reference/multithreading.html)
+- **KDB.AI indexes**: Switched from `flat`/`hnsw` (in-memory, single-threaded) to `qFlat`/`qHnsw` (disk-backed, multithreaded) — 72% faster search. Note: API spelling is `qHnsw` not `qHNSW`.
 - **Worker instances**: Upgraded from m5.2xlarge (8 CPU, 32GB) to m5.4xlarge (16 CPU, 64GB) — matches local benchmark config (cpus: 16, memory: 64g)
 - **Database notes**: All 9 configs have `metadata.notes` documenting benchmark-relevant quirks (payload limits, index types, protocol caveats)
 
