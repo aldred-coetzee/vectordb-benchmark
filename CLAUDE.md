@@ -26,8 +26,10 @@ This project may be shared publicly so others can verify benchmarks independentl
 - Self-contained — users should be able to clone and run
 
 ### Testing
+- **Dev datasets**: Use `--dataset sift-dev` for fast iteration (~12s per DB vs 30+ min)
+- Generate dev data: `python scripts/generate_dev_datasets.py --datasets sift`
 - Run `python run_benchmark.py --help` to verify CLI changes
-- Test client changes with small dataset before full benchmark
+- Test client changes on sift-dev before full benchmark
 
 ## Project Overview
 
@@ -62,7 +64,8 @@ benchmark/
 
 configs/               # YAML configs per database (index params, efSearch sweeps)
 results/               # Benchmark output (CSV, JSON, HTML reports)
-data/                  # Datasets (sift/, gist/) and DB runtime storage
+data/                  # Datasets (sift/, gist/, sift-dev/) and DB runtime storage
+scripts/               # Utility scripts (generate_dev_datasets.py)
 aws/                   # AWS orchestration (orchestrator.py, worker_startup.sh)
 ```
 
@@ -72,11 +75,17 @@ aws/                   # AWS orchestration (orchestrator.py, worker_startup.sh)
 # Run single database benchmark
 python run_benchmark.py --config configs/qdrant.yaml
 
+# Fast dev test (~12 seconds)
+python run_benchmark.py --config configs/qdrant.yaml --dataset sift-dev
+
 # Run all databases sequentially
 python run_all.py
 
 # Generate comparison report from results
 python generate_report.py
+
+# Generate dev datasets from full datasets
+python scripts/generate_dev_datasets.py --datasets sift
 ```
 
 ## Configuration Format (configs/*.yaml)
@@ -111,6 +120,19 @@ Each dataset contains: `*_base.fvecs` (vectors), `*_query.fvecs` (queries), `*_g
 | **SIFT-10M** | 10M | 128 | 10K | L2 | ~5GB | Scale stress |
 | **GloVe-100** | 1.2M | 100 | 10K | Cosine | ~500MB | Cosine metric (NLP/embeddings) |
 
+### Dev Datasets (for development testing)
+
+Small subsets for fast iteration — NOT for benchmarking. Generated from full datasets.
+
+| Dataset | Vectors | Dims | Queries | Source |
+|---------|---------|------|---------|--------|
+| **sift-dev** | 10K | 128 | 100 | SIFT-1M |
+| **gist-dev** | 10K | 960 | 100 | GIST-1M |
+
+Generate with: `python scripts/generate_dev_datasets.py`
+
+Dev datasets use recomputed exact ground truth (FAISS brute-force) and the same `.fvecs/.ivecs` format, so the same code paths are exercised.
+
 ### Recommended Progression
 
 ```
@@ -126,7 +148,6 @@ Four axes: baseline, dimension stress (960D), volume stress (10M), distance metr
 - **Sequential execution**: `run_all.py` runs databases one at a time
 - **Single machine**: All benchmarks run on local Docker
 - **Long runtime**: Full suite takes several hours (9 DBs x multiple configs)
-- **Single dataset**: Only SIFT-1M currently implemented
 
 ---
 
@@ -259,6 +280,8 @@ Orchestrator AMI contains:
 - Stable — rarely needs rebuilding
 
 #### Worker AMI (Pre-baked)
+
+`ami-0f9bf04496aedd923` (`vectordb-benchmark-worker-v1`)
 
 ```
 Worker AMI (v1) contains:
@@ -423,38 +446,48 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 **Completed**:
 - [x] Test EC2 launch (verified SSH access works)
 - [x] Worker AMI v1: `ami-0f9bf04496aedd923` (`vectordb-benchmark-worker-v1`)
-  - Datasets: SIFT-1M, GIST-1M at `/data/`
-  - Docker images: Qdrant, Milvus, Weaviate, ChromaDB, Redis, pgvector, KDB.AI
+- [x] Orchestrator AMI v1: `ami-09ed5dd071675cfef` (`vectordb-benchmark-orchestrator-v1`)
 - [x] Refactored `SIFTDataset` → `TexmexDataset` (auto-detects dataset name from directory)
 - [x] Standardized dataset paths to `data/` (relative paths, symlinked to `/data/` on AWS)
 - [x] Created `aws/worker_startup.sh` with auto-termination, S3 result upload, credential fetching
 - [x] Created `aws/orchestrator.py` for launching and monitoring worker instances
-- [x] Worker auto-termination implemented (trap on exit + scheduled shutdown)
+- [x] Created `aws/orchestrator_startup.sh` with tag-based config, self-tagging
+- [x] Launch Template v10 (`vectordb-benchmark-full`) with orchestrator AMI
+- [x] IAM policies: PassRole + EC2 permissions
+- [x] Worker auto-termination (trap on exit + scheduled shutdown)
+- [x] Orchestrator self-tags with run ID
+- [x] Test full orchestrator flow (qdrant/sift minimal test — passed)
+- [x] Fix all benchmark code bugs (see bugs fixed below)
+- [x] All 9 databases validated on sift-dev locally
+- [x] Dev dataset tooling (`scripts/generate_dev_datasets.py`)
 
 **Still TODO**:
-- [x] Create `aws/orchestrator_startup.sh` (runs orchestrator.py instead of single benchmark)
-- [x] Create Launch Template (`vectordb-benchmark-full`)
-- [x] Add `iam:PassRole` permission (managed policy: `vectordb-benchmark-passrole`)
-- [x] Add EC2 permissions (managed policy: `vectordb-benchmark-ec2`)
-- [x] Build Orchestrator AMI: `ami-09ed5dd071675cfef` (`vectordb-benchmark-orchestrator-v1`)
-- [x] Update Launch Template to use Orchestrator AMI (version 10)
-- [x] Add Name/Owner/Project tags to worker instances in `orchestrator.py`
-- [x] Fix IMDSv2 token for tag reading on AL2023
-- [x] Fix user-data to git pull then run local script (avoid GitHub CDN caching)
-- [x] Orchestrator self-tags with run ID (`vectordb-orchestrator-{run-id}`)
-- [x] Test full orchestrator flow (qdrant/sift minimal test — passed)
-- [ ] Run full benchmark suite — first run `2026-02-05-0902` partial (see known issues below)
-- [ ] Fix Redis/pgvector/KDB.AI container startup failures
-- [ ] Re-run gist dataset after filename fix
+- [ ] Run clean full benchmark suite (all 9 DBs × sift + gist)
 - [ ] Generate comparison report from results
 - [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
 - [ ] Add GloVe-100 support (HDF5 format - needs h5py)
 - [ ] (Optional) Streamlit UI if team usage increases
 
+### Bugs Fixed (from AWS test runs 2026-02-05)
+
+| # | Bug | Affected | Root Cause | Fix |
+|---|-----|----------|-----------|-----|
+| 1 | Hardcoded `sift_*` filenames | All gist jobs | `run_benchmark.py` checked for `sift_base.fvecs` regardless of dataset | Dynamic `{dataset_name}_*.fvecs` |
+| 2 | KDB.AI license env var lost | KDB.AI | `sudo -u` doesn't preserve env vars | `sudo -E -u` in `worker_startup.sh` |
+| 3 | Connection failed after container health check | Redis, pgvector, KDB.AI | Health check passes (port open) but app not ready | 8 retries over 45s with exponential backoff |
+| 4 | pgvector `vector type not found` | pgvector | `register_vector()` called before `CREATE EXTENSION` | Swapped order in `pgvector_client.py` |
+| 5 | Qdrant 193MB payload on GIST | Qdrant + GIST | 50K × 960-dim = 193MB, exceeds 32MB HTTP limit | Auto-calculate batch size based on dimensions |
+| 6 | Redis `BusyLoadingError` on startup | Redis | Volume mount loaded old 1GB RDB dump | Removed volume mount (benchmarks start fresh) |
+
+### Config Improvements
+
+- **efSearch sweep**: Trimmed from [8,16,32,64,128,256] to [32,64,128,256] — lower values have unusable recall
+- **Dev datasets**: 10K vectors / 100 queries for ~12s smoke tests (`--dataset sift-dev`)
+
 **First Worker Test Results** (2026-02-04):
-- Qdrant on SIFT-1M: ✓ Completed successfully
+- Qdrant on SIFT-1M: Completed successfully
 - Results uploaded to S3: `s3://vectordb-benchmark-590780615264/runs/2026-02-04-2117/jobs/qdrant-sift/`
-- Instance auto-terminated: ✓
+- Instance auto-terminated
 - HNSW efSearch=128: 381 QPS, 2.4ms p50 latency, 99.3% recall
 
 **Implementation Notes**:
@@ -464,6 +497,8 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - User-data does `git pull` then runs local script to avoid GitHub CDN caching issues
 - Orchestrator self-tags with `vectordb-orchestrator-{run-id}` after generating run ID
 - Workers tagged with Name, Owner, Project, RunId, Database, Dataset at launch
+- Qdrant client auto-calculates insert batch size based on vector dimensions (stays under 32MB HTTP limit)
+- Connection retry: 8 attempts with exponential backoff capped at 10s (total ~45s window)
 
 ### Triggering Benchmarks
 
@@ -518,6 +553,9 @@ python aws/orchestrator.py --databases qdrant --datasets sift
 
 # Full run from CLI (same as Launch Template)
 python aws/orchestrator.py
+
+# Full run, don't wait for completion
+python aws/orchestrator.py --no-wait
 ```
 
 #### Why This Approach
@@ -536,21 +574,16 @@ python aws/orchestrator.py
 5. ~~**Build Orchestrator AMI**~~ ✓ — `ami-09ed5dd071675cfef`
 6. ~~**Update Launch Template**~~ ✓ — Orchestrator AMI + tags + git-based user-data
 7. ~~**Fix Worker Name Tags**~~ ✓
-8. ~~**Test Full Orchestrator Flow**~~ ✓ — Minimal test (qdrant/sift) passed
-9. **Run All Databases** — **IN PROGRESS** (run `2026-02-05-0902`)
-10. **Generate Comparison Report** — From S3 results
-11. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
-
-### Known Issues (from first full run 2026-02-05-0902)
-
-1. **Gist dataset skipped** (FIXED) — `run_benchmark.py` hardcoded `sift_base.fvecs` instead of using dataset name. Fix pushed in `3426e8c`.
-2. **KDB.AI license not found** — `KDB_LICENSE_B64` env var set in worker shell but not passed to Docker container. Needs fix in kdbai config/startup.
-3. **Redis connection refused** — Container starts but connection reset. May need longer health check wait or startup delay.
-4. **pgvector connection refused** — Same pattern as Redis. Container not ready when benchmark tries to connect.
+8. ~~**Test Full Orchestrator Flow**~~ ✓ — Minimal test passed
+9. ~~**Fix Benchmark Code Bugs**~~ ✓ — All 6 bugs fixed, all 9 DBs pass on sift-dev
+10. **Run Clean Full Benchmark** — All 9 DBs × sift + gist
+11. **Generate Comparison Report** — From S3 results
+12. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
 - Spot instances vs on-demand? (spot cheaper but can be interrupted)
+- Orphan cleanup: orchestrator should tag workers and terminate on exit (not yet implemented)
 
 ### Future: Filtered & Hybrid Search (Out of Scope for Now)
 
@@ -577,6 +610,8 @@ Design consideration: Keep dataset/query loading modular so filtered queries can
 Datasets use relative `data/` paths (configured in `benchmark.yaml`):
 - `data/sift/` — SIFT-1M (sift_base.fvecs, sift_query.fvecs, sift_groundtruth.ivecs)
 - `data/gist/` — GIST-1M (gist_base.fvecs, gist_query.fvecs, gist_groundtruth.ivecs)
+- `data/sift-dev/` — Dev subset (10K vectors, 100 queries, recomputed ground truth)
+- `data/gist-dev/` — Dev subset (10K vectors, 100 queries, recomputed ground truth)
 
 **Local**: Datasets stored in project `data/` directory
 **AWS**: Worker startup script creates symlink `data -> /data` (AMI has datasets at `/data/`)
