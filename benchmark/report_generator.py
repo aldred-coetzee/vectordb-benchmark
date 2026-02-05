@@ -334,7 +334,7 @@ class ReportGenerator:
 
             # Dataset description from config
             datasets = bench_config.get("datasets", {})
-            ds_info = datasets.get(sample.dataset, {})
+            ds_info = datasets.get(sample.dataset, {}) or datasets.get(sample.dataset.lower(), {})
             ds_desc = ds_info.get("description", "")
             lines.append(f"- **Dataset**: {sample.dataset} ({sample.vector_count:,} vectors, {sample.dimensions} dimensions)")
             if ds_desc:
