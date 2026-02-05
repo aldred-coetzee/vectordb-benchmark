@@ -11,6 +11,17 @@ datasets:
     vectors: 1000000
     dimensions: 960
 
+  # Dev datasets — small subsets for fast iteration (NOT for benchmarking)
+  # Generate with: python scripts/generate_dev_datasets.py
+  sift-dev:
+    path: data/sift-dev
+    vectors: 10000
+    dimensions: 128
+  gist-dev:
+    path: data/gist-dev
+    vectors: 10000
+    dimensions: 960
+
 indexes:
   flat:
     # Flat index (brute-force exact search)
