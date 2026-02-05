@@ -191,9 +191,10 @@ class QdrantClient(BaseVectorDBClient):
 
         try:
             # Upsert in batches sized to stay under Qdrant's 32MB HTTP payload limit
+            # Qdrant uses JSON over HTTP — each float is ~12 bytes in text, not 4 bytes binary
             dims = len(vectors_list[0]) if vectors_list else 128
             max_payload_bytes = 30_000_000  # 30MB conservative
-            bytes_per_point = dims * 4 + 100  # float32 + JSON overhead
+            bytes_per_point = dims * 12 + 200  # JSON-encoded float (~12 bytes) + overhead
             batch_size = max(100, min(10000, max_payload_bytes // bytes_per_point))
             for i in range(0, len(points), batch_size):
                 batch = points[i:i + batch_size]
