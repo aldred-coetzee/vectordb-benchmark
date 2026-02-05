@@ -154,7 +154,7 @@ def filter_indexes(
         if idx_lower in supported:
             filtered.append(idx_lower)
         else:
-            print(f"Warning: Index type '{idx}' not supported by {database_name}, skipping")
+            print(f"  Index type '{idx}' not supported by {database_name}, skipping")
 
     return filtered
 
@@ -294,8 +294,11 @@ def run_with_config(
         indexes_to_run = filter_indexes(requested_indexes, supported, database_name)
 
         if not indexes_to_run:
-            print(f"\nNo supported indexes to run for {database_name}. Skipping.")
-            print(f"Supported indexes: {supported or 'none (database uses different index types)'}")
+            print(f"\n{database_name} does not support the requested index types. Nothing to benchmark.")
+            if not supported:
+                print(f"  This database uses different index types (e.g., IVF-based) — it will be included in future benchmarks.")
+            else:
+                print(f"  Supported indexes: {supported}")
             return
 
         print(f"Indexes to run: {indexes_to_run}")
