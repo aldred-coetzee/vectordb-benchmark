@@ -36,7 +36,7 @@ metadata:
   persistence: disk
   license: Commercial
   url: https://kdb.ai
-  notes: "qIPC protocol. Uses qFlat/qHnsw (disk-backed mmap) not flat/hnsw (in-memory) — 2x faster search and 10x lower CPU usage (155% vs 1478%). THREADS env var must match CPU cores. Requires commercial license."
+  notes: "qIPC protocol. Uses qFlat/qHnsw (disk-backed mmap) not flat/hnsw (in-memory) — 2x faster search, 10x lower CPU (155% vs 1478%), 28% lower memory. THREADS env var must match CPU cores. Requires commercial license."
 
 # KDB.AI specific parameters
 params:
