@@ -1634,10 +1634,11 @@ class ComparisonReportGenerator:
         if not ef_values:
             return ""
 
-        header = "<tr><th>Database ▼</th>"
+        header = "<tr><th>Database</th>"
         for ef in ef_values:
             header += f"<th>ef={ef} QPS</th><th>ef={ef} R@10</th>"
         header += "</tr>"
+        sort_note = '<p class="note">Sorted by best QPS across ef values (descending).</p>'
 
         # Sort runs by best HNSW QPS descending
         def _best_hnsw_qps(run: RunData) -> float:
@@ -1661,7 +1662,7 @@ class ComparisonReportGenerator:
             row += "</tr>"
             rows.append(row)
 
-        return f'<div class="table-wrap"><table><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table></div>'
+        return f'{sort_note}<div class="table-wrap"><table><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table></div>'
 
     # -----------------------------------------------------------------
     # Configuration section
