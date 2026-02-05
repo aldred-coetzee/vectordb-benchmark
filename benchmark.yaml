@@ -4,8 +4,6 @@
 # =============================================================================
 # Datasets
 # =============================================================================
-# Each dataset includes base vectors, query vectors, and ground truth neighbors.
-# Ground truth enables recall calculation without brute-force recomputation.
 
 datasets:
   sift:
@@ -26,42 +24,25 @@ datasets:
     path: data/sift-dev
     vectors: 10000
     dimensions: 128
-    description: "Dev subset of SIFT-1M (10K vectors, 100 queries). For code testing only — NOT representative of production performance."
+    description: "Dev subset of SIFT-1M (10K vectors, 100 queries). For code testing only."
 
   gist-dev:
     path: data/gist-dev
     vectors: 10000
     dimensions: 960
-    description: "Dev subset of GIST-1M (10K vectors, 100 queries). For code testing only — NOT representative of production performance."
+    description: "Dev subset of GIST-1M (10K vectors, 100 queries). For code testing only."
 
 # =============================================================================
 # Index Types
 # =============================================================================
-# Each database builds these indexes and runs search at each efSearch value.
-# This produces a recall-vs-QPS tradeoff curve per database.
 
 indexes:
   flat:
-    # Brute-force exact search — compares query against every vector.
-    # Purpose: Establishes ground-truth recall baseline (should be ~100%)
-    # and measures raw scan throughput without index overhead.
-    # Slow on large datasets but guarantees perfect accuracy.
+    description: "Brute-force exact search. Compares the query against every vector in the dataset. Guarantees 100% recall but is slow on large datasets. Used as a baseline to validate recall and measure raw scan throughput."
     params: {}
 
   hnsw:
-    # Hierarchical Navigable Small World graph — the dominant ANN index type.
-    # Builds a multi-layer proximity graph at ingest time.
-    #
-    # Build parameters:
-    #   M: Max edges per node. Higher = better recall, more memory, slower build.
-    #     Typical range: 8-64. We use 16 (standard baseline).
-    #   efConstruction: Beam width during graph build. Higher = better graph quality.
-    #     Typical range: 32-512. We use 64 (standard baseline).
-    #
-    # Search parameter:
-    #   efSearch: Beam width during search. Higher = better recall, slower search.
-    #     Swept across values to produce recall-vs-QPS tradeoff curve.
-    #     Values below k (num results) are skipped by some databases.
+    description: "Hierarchical Navigable Small World graph — the dominant approximate nearest neighbor (ANN) index. Builds a multi-layer proximity graph at ingest time, then traverses it at search time. Trades recall for speed: higher efSearch improves recall but reduces QPS."
     M: 16
     efConstruction: 64
     efSearch:
@@ -71,28 +52,60 @@ indexes:
       - 256
 
   ivf:
-    # Placeholder for Inverted File index (not yet implemented)
-    # Partitions vectors into clusters; searches only nearby clusters.
-    # nlist: 100
-    # nprobe: [1, 5, 10, 20]
+    description: "Inverted File index. Partitions vectors into clusters and searches only nearby clusters. Not yet implemented."
     params: {}
 
   ivfpq:
-    # Placeholder for IVF with Product Quantization (not yet implemented)
-    # Combines IVF partitioning with vector compression for memory efficiency.
-    # nlist: 100
-    # m: 8
-    # nbits: 8
-    # nprobe: [1, 5, 10, 20]
+    description: "IVF with Product Quantization. Combines cluster-based partitioning with vector compression for memory efficiency. Not yet implemented."
     params: {}
 
 # =============================================================================
 # Search Configuration
 # =============================================================================
-# Controls how search benchmarks are executed across all databases.
 
 search:
-  k: 10                 # Number of nearest neighbors to retrieve per query
-  num_queries: 10000    # Total queries to run (from dataset's query vectors)
-  warmup: 100           # Queries to run before timing (warms caches, JIT, etc.)
-  batch_size: 50000     # Ingest batch size (vectors per insert call)
+  k: 10
+  num_queries: 10000
+  warmup: 100
+  batch_size: 50000
+
+# =============================================================================
+# Metric Descriptions (used in report generation)
+# =============================================================================
+
+metrics:
+  qps:
+    name: "Queries Per Second (QPS)"
+    description: "Number of single-vector queries completed per second. Queries are executed sequentially (one at a time, wait for response). Measures single-client throughput, not concurrent load."
+
+  recall_at_10:
+    name: "Recall@10"
+    description: "Fraction of true 10 nearest neighbors found by the search. Computed against brute-force ground truth provided with each dataset. 1.0 = perfect accuracy."
+
+  recall_at_100:
+    name: "Recall@100"
+    description: "Fraction of true 100 nearest neighbors found. A stricter accuracy measure than Recall@10."
+
+  latency_p50:
+    name: "P50 Latency (ms)"
+    description: "Median query latency. 50% of queries complete faster than this value."
+
+  latency_p99:
+    name: "P99 Latency (ms)"
+    description: "99th percentile query latency. Measures tail latency — the worst-case experience for 1 in 100 queries."
+
+  ingest_throughput:
+    name: "Ingest Throughput (vectors/sec)"
+    description: "Rate of vector insertion including index building. For HNSW, each insert updates the graph, so throughput decreases as the dataset grows."
+
+  ef_search:
+    name: "efSearch"
+    description: "HNSW search beam width — the number of candidate nodes evaluated at each step of graph traversal. Higher values explore more of the graph, improving recall at the cost of QPS. Swept across [32, 64, 128, 256] to produce a recall-vs-speed tradeoff curve."
+
+  m_parameter:
+    name: "M (HNSW)"
+    description: "Maximum number of edges per node in the HNSW graph. Fixed at M=16 across all databases for fair comparison. Higher M improves recall and increases memory usage."
+
+  ef_construction:
+    name: "efConstruction (HNSW)"
+    description: "Beam width used during HNSW graph construction. Fixed at 64 across all databases. Higher values build a better quality graph at the cost of slower ingest."

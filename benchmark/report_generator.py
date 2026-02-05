@@ -308,9 +308,20 @@ class ReportGenerator:
 
         return findings
 
+    def _load_benchmark_config(self) -> Dict[str, Any]:
+        """Load shared benchmark configuration."""
+        config_path = Path("benchmark.yaml")
+        if config_path.exists():
+            try:
+                return load_yaml_config(str(config_path))
+            except Exception:
+                pass
+        return {}
+
     def generate_markdown(self, runs: List[RunData]) -> str:
         """Generate markdown report."""
         lines = []
+        bench_config = self._load_benchmark_config()
 
         # Header
         lines.append("# Vector Database Benchmark Report")
@@ -320,11 +331,43 @@ class ReportGenerator:
         if runs:
             sample = runs[0]
             lines.append("## Benchmark Configuration")
+
+            # Dataset description from config
+            datasets = bench_config.get("datasets", {})
+            ds_info = datasets.get(sample.dataset, {})
+            ds_desc = ds_info.get("description", "")
             lines.append(f"- **Dataset**: {sample.dataset} ({sample.vector_count:,} vectors, {sample.dimensions} dimensions)")
-            lines.append(f"- **Search**: k=100, 10,000 queries")
+            if ds_desc:
+                lines.append(f"  - {ds_desc}")
+            lines.append(f"- **Search**: k=100, 10,000 queries (sequential, single-client)")
             if sample.hostname:
                 lines.append(f"- **Host**: {sample.hostname}")
             lines.append("")
+
+            # Index descriptions from config
+            indexes = bench_config.get("indexes", {})
+            if indexes:
+                lines.append("### Index Types Tested")
+                lines.append("")
+                for idx_name, idx_config in indexes.items():
+                    desc = idx_config.get("description", "") if isinstance(idx_config, dict) else ""
+                    if desc and "not yet implemented" not in desc.lower():
+                        lines.append(f"- **{idx_name.upper()}**: {desc}")
+                lines.append("")
+
+            # Metric glossary from config
+            metrics = bench_config.get("metrics", {})
+            if metrics:
+                lines.append("### Metrics Glossary")
+                lines.append("")
+                lines.append("| Metric | Description |")
+                lines.append("|--------|-------------|")
+                for key, info in metrics.items():
+                    if isinstance(info, dict):
+                        name = info.get("name", key)
+                        desc = info.get("description", "")
+                        lines.append(f"| {name} | {desc} |")
+                lines.append("")
 
         # Database Configuration Summary
         lines.append("## Database Configuration Summary")
