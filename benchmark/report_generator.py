@@ -161,7 +161,9 @@ class ReportGenerator:
         # Load metadata from config file
         metadata = {}
         config = {}
-        config_path = self.configs_dir / f"{database.lower()}.yaml"
+        # Normalize database name for config lookup (e.g. "KDB.AI" -> "kdbai")
+        config_name = database.lower().replace(".", "")
+        config_path = self.configs_dir / f"{config_name}.yaml"
         if config_path.exists():
             try:
                 full_config = load_yaml_config(str(config_path))
