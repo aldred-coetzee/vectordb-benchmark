@@ -294,8 +294,9 @@ def run_with_config(
         indexes_to_run = filter_indexes(requested_indexes, supported, database_name)
 
         if not indexes_to_run:
-            print("Error: No valid indexes to run after filtering")
-            raise RuntimeError("No valid indexes to run after filtering")
+            print(f"\nNo supported indexes to run for {database_name}. Skipping.")
+            print(f"Supported indexes: {supported or 'none (database uses different index types)'}")
+            return
 
         print(f"Indexes to run: {indexes_to_run}")
 

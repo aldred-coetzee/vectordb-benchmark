@@ -1,7 +1,7 @@
 """LanceDB vector database client implementation."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import numpy as np
 
@@ -35,6 +35,15 @@ class LanceDBClient(BaseVectorDBClient):
     def name(self) -> str:
         """Return the database name."""
         return "LanceDB"
+
+    @property
+    def supported_indexes(self) -> Set[str]:
+        """LanceDB only supports IVF-based indexes (IVF_PQ, IVF_HNSW_SQ, IVF_HNSW_PQ).
+
+        Pure HNSW and FLAT indexes are not available. LanceDB will be included
+        when IVF-PQ benchmarks are added.
+        """
+        return set()
 
     def connect(self, endpoint: str = "./data/lancedb", **kwargs) -> None:
         """

@@ -497,6 +497,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Batch ≠ parallel**: Batch reduces network round trips but server-side parallelism varies. FAISS parallelizes via OpenMP across queries. Qdrant parallelizes since v1.14 (chunked across shards). Milvus parallelizes via Knowhere thread pool. KDB.AI only parallelizes for partitioned tables — single-table batch is sequential server-side. ChromaDB behavior undocumented.
 - **Qdrant batch API**: Use `query_batch_points()` with `QueryRequest`, NOT `search_batch()`/`SearchRequest` (deprecated/removed).
 - **FAISS threading**: Single-query search is always single-threaded. Only batch search benefits from `omp_set_num_threads()`. Never use concurrent client threads — causes harmful OpenMP thread nesting.
+- **LanceDB excluded**: Does not support pure HNSW or FLAT — only IVF-based indexes (IVF_PQ, IVF_HNSW_SQ, IVF_HNSW_PQ). Previous results used IVF_HNSW_SQ disguised as HNSW, producing unfairly low QPS (65 vs FAISS 2,403). Now excluded via `supported_indexes = set()`. Will be re-added when IVF-PQ benchmarks are implemented.
 
 **First Worker Test Results** (2026-02-04):
 - Qdrant on SIFT-1M: Completed successfully

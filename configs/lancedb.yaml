@@ -15,7 +15,7 @@ metadata:
   persistence: disk
   license: Apache-2.0
   url: https://lancedb.com
-  notes: "Embedded, disk-backed. Uses IVF_HNSW_SQ (not pure HNSW) — efSearch mapped to refine_factor, so not directly comparable to other HNSW implementations."
+  notes: "Embedded, disk-backed (Lance columnar format). Does not support pure HNSW or FLAT indexes — only IVF-based: IVF_PQ, IVF_HNSW_SQ, IVF_HNSW_PQ. Excluded from current HNSW/FLAT benchmarks. Will be included when IVF-PQ benchmarks are added."
 
 # LanceDB-specific parameters
 params:
