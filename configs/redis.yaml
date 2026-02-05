@@ -25,10 +25,10 @@ metadata:
   full_name: "Redis Stack"
   architecture: client-server
   protocol: RESP3
-  persistence: disk
+  persistence: memory
   license: RSALv2/SSPLv1
   url: https://redis.io/docs/stack/
-  notes: "In-memory only. No volume persistence (old RDB dumps caused BusyLoadingError). Each benchmark starts fresh — may not reflect production disk-backed behavior."
+  notes: "In-memory for all operations — reads, writes, and searches happen in RAM. RDB snapshots can persist to disk for recovery but do not affect query/ingest performance. Benchmark runs without volume mount (fresh start each run). Numbers are representative of production since Redis is always memory-bound."
 
 # Redis-specific parameters
 params:
