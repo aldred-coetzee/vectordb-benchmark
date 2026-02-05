@@ -1,10 +1,11 @@
 """Report generator for benchmark results."""
 
+import io
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .config import load_yaml_config
 from .db import BenchmarkDatabase
@@ -963,3 +964,914 @@ class ReportGenerator:
             return self.generate_html(runs)
         else:
             return self.generate_markdown(runs)
+
+
+# =============================================================================
+# Color palette and chart utilities
+# =============================================================================
+
+# Accessible color palette — distinct hues for up to 9 databases
+DB_COLORS = {
+    "FAISS": "#636363",       # gray (embedded baseline)
+    "Qdrant": "#e41a1c",      # red
+    "Milvus": "#377eb8",      # blue
+    "Chroma": "#4daf4a",      # green
+    "Weaviate": "#984ea3",    # purple
+    "Redis": "#ff7f00",       # orange
+    "pgvector": "#a65628",    # brown
+    "KDB.AI": "#f781bf",      # pink
+    "LanceDB": "#999999",     # light gray (embedded)
+}
+
+DB_MARKERS = {
+    "FAISS": "s",       # square
+    "Qdrant": "o",
+    "Milvus": "D",      # diamond
+    "Chroma": "^",      # triangle up
+    "Weaviate": "v",    # triangle down
+    "Redis": "P",       # plus (filled)
+    "pgvector": "X",    # x (filled)
+    "KDB.AI": "*",      # star
+    "LanceDB": "h",     # hexagon
+}
+
+
+def _get_color(db_name: str) -> str:
+    """Get color for a database name."""
+    return DB_COLORS.get(db_name, "#333333")
+
+
+def _get_marker(db_name: str) -> str:
+    """Get marker for a database name."""
+    return DB_MARKERS.get(db_name, "o")
+
+
+def _fig_to_svg(fig) -> str:
+    """Convert a matplotlib figure to inline SVG string."""
+    buf = io.StringIO()
+    fig.savefig(buf, format="svg", bbox_inches="tight")
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+    svg = buf.getvalue()
+    # Strip XML declaration and DOCTYPE for inline embedding
+    lines = svg.split("\n")
+    filtered = [l for l in lines if not l.startswith("<?xml") and not l.startswith("<!DOCTYPE")]
+    return "\n".join(filtered)
+
+
+class ComparisonReportGenerator:
+    """Generate combined multi-dataset benchmark report with charts."""
+
+    # Reference ef for executive summary (common operating point)
+    REFERENCE_EF = 128
+
+    def __init__(self, db_path: str = "results/benchmark.db", configs_dir: str = "configs"):
+        self._rg = ReportGenerator(db_path=db_path, configs_dir=configs_dir)
+
+    def close(self):
+        self._rg.close()
+
+    def generate(
+        self,
+        databases: Optional[List[str]] = None,
+        run_ids: Optional[List[int]] = None,
+    ) -> str:
+        """Generate a combined HTML report across all datasets."""
+        if run_ids:
+            all_runs = self._rg.get_runs_by_ids(run_ids)
+        else:
+            all_runs = self._rg.get_latest_runs(databases)
+
+        if not all_runs:
+            return "<html><body><p>No benchmark results found.</p></body></html>"
+
+        # Group runs by dataset
+        by_dataset: Dict[str, List[RunData]] = {}
+        for run in all_runs:
+            ds = run.dataset.upper()
+            by_dataset.setdefault(ds, []).append(run)
+
+        datasets = sorted(by_dataset.keys())
+        bench_config = self._rg._load_benchmark_config()
+        datasets_meta = bench_config.get("datasets", {})
+
+        # Build report sections
+        sections: List[str] = []
+        sections.append(self._render_header(datasets, all_runs))
+        sections.append(self._render_executive_summary(by_dataset, datasets))
+
+        # Charts
+        chart_svgs = self._render_charts(by_dataset, datasets)
+        sections.append(chart_svgs)
+
+        # Key findings (cross-dataset)
+        sections.append(self._render_findings(by_dataset, datasets))
+
+        # Per-dataset details (collapsible)
+        sections.append(self._render_per_dataset_details(by_dataset, datasets))
+
+        # Configuration and methodology
+        sections.append(self._render_config_section(all_runs, bench_config, datasets_meta))
+        sections.append(self._render_methodology())
+
+        body = "\n".join(sections)
+        return self._wrap_html(body)
+
+    # -----------------------------------------------------------------
+    # Header
+    # -----------------------------------------------------------------
+    def _render_header(self, datasets: List[str], runs: List[RunData]) -> str:
+        sample = runs[0]
+        db_names = sorted(set(r.database for r in runs))
+        ds_display = ", ".join(datasets)
+        return f"""
+        <h1>Vector Database Benchmark Report</h1>
+        <p class="meta">
+            Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} &mdash;
+            {len(db_names)} databases &times; {len(datasets)} datasets
+            ({ds_display})
+        </p>"""
+
+    # -----------------------------------------------------------------
+    # Executive Summary
+    # -----------------------------------------------------------------
+    def _render_executive_summary(
+        self,
+        by_dataset: Dict[str, List[RunData]],
+        datasets: List[str],
+    ) -> str:
+        lines: List[str] = []
+        lines.append("<h2>Executive Summary</h2>")
+        lines.append(f'<p class="note">All search metrics at HNSW efSearch={self.REFERENCE_EF} (common operating point). '
+                      f'Sorted by average QPS across datasets.</p>')
+
+        # Collect all unique databases
+        all_dbs = sorted(set(r.database for ds_runs in by_dataset.values() for r in ds_runs))
+
+        # Build header row
+        header = "<tr><th>Database</th><th>Type</th>"
+        for ds in datasets:
+            header += f"<th>{ds} QPS</th><th>{ds} R@10</th>"
+        header += "<th>Avg QPS</th>"
+        # Add ingest columns
+        for ds in datasets:
+            header += f"<th>{ds} Ingest (v/s)</th>"
+        header += "</tr>"
+
+        # Collect data per database
+        db_rows: List[Tuple[str, str, Dict[str, Optional[SearchData]], Dict[str, Optional[IngestData]], float]] = []
+
+        for db_name in all_dbs:
+            # Find architecture from metadata
+            sample_run = next((r for ds_runs in by_dataset.values() for r in ds_runs if r.database == db_name), None)
+            arch = sample_run.metadata.get("architecture", "unknown") if sample_run else "unknown"
+
+            search_by_ds: Dict[str, Optional[SearchData]] = {}
+            ingest_by_ds: Dict[str, Optional[IngestData]] = {}
+            qps_values = []
+
+            for ds in datasets:
+                ds_runs = by_dataset.get(ds, [])
+                run = next((r for r in ds_runs if r.database == db_name), None)
+                if run:
+                    # Find HNSW result at reference ef
+                    result = next(
+                        (s for s in run.search_results
+                         if s.index_type.lower() == "hnsw" and s.ef_search == self.REFERENCE_EF),
+                        None
+                    )
+                    search_by_ds[ds] = result
+                    if result:
+                        qps_values.append(result.qps)
+
+                    hnsw_ingest = next(
+                        (i for i in run.ingest_results if i.index_type.lower() == "hnsw"), None
+                    )
+                    ingest_by_ds[ds] = hnsw_ingest
+                else:
+                    search_by_ds[ds] = None
+                    ingest_by_ds[ds] = None
+
+            avg_qps = sum(qps_values) / len(qps_values) if qps_values else 0
+            db_rows.append((db_name, arch, search_by_ds, ingest_by_ds, avg_qps))
+
+        # Sort by avg QPS descending
+        db_rows.sort(key=lambda x: x[4], reverse=True)
+
+        # Compute ranks per dataset for QPS (client-server only)
+        cs_qps_ranks: Dict[str, Dict[str, int]] = {}  # ds -> {db_name: rank}
+        for ds in datasets:
+            cs_entries = [
+                (row[0], row[2].get(ds))
+                for row in db_rows
+                if row[1] == "client-server" and row[2].get(ds)
+            ]
+            cs_entries.sort(key=lambda x: x[1].qps if x[1] else 0, reverse=True)
+            cs_qps_ranks[ds] = {name: i + 1 for i, (name, _) in enumerate(cs_entries)}
+
+        # Build rows
+        rows_html: List[str] = []
+        for db_name, arch, search_by_ds, ingest_by_ds, avg_qps in db_rows:
+            arch_label = "embedded" if arch == "embedded" else ""
+            row = f"<tr><td><strong>{db_name}</strong></td><td>{arch_label}</td>"
+
+            for ds in datasets:
+                s = search_by_ds.get(ds)
+                rank = cs_qps_ranks.get(ds, {}).get(db_name, 0)
+                n_cs = len(cs_qps_ranks.get(ds, {}))
+
+                if s:
+                    rank_class = ""
+                    if arch == "client-server" and n_cs >= 3:
+                        if rank <= 2:
+                            rank_class = " class=\"rank-top\""
+                        elif rank >= n_cs - 1:
+                            rank_class = " class=\"rank-bottom\""
+                    row += f"<td{rank_class}>{s.qps:,.0f}</td>"
+                    row += f"<td>{s.recall_at_10:.3f}</td>" if s.recall_at_10 else "<td>-</td>"
+                else:
+                    row += "<td>-</td><td>-</td>"
+
+            row += f"<td><strong>{avg_qps:,.0f}</strong></td>"
+
+            for ds in datasets:
+                ig = ingest_by_ds.get(ds)
+                row += f"<td>{ig.throughput_vps:,.0f}</td>" if ig else "<td>-</td>"
+
+            row += "</tr>"
+            rows_html.append(row)
+
+        table = f"""<div class="table-wrap"><table>
+        <thead>{header}</thead>
+        <tbody>{"".join(rows_html)}</tbody>
+        </table></div>"""
+
+        lines.append(table)
+        return "\n".join(lines)
+
+    # -----------------------------------------------------------------
+    # Charts
+    # -----------------------------------------------------------------
+    def _render_charts(
+        self,
+        by_dataset: Dict[str, List[RunData]],
+        datasets: List[str],
+    ) -> str:
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except ImportError:
+            return "<p><em>Charts unavailable (matplotlib not installed).</em></p>"
+
+        lines: List[str] = ["<h2>Performance Charts</h2>", '<div class="chart-grid">']
+
+        # Recall vs QPS scatter (one per dataset)
+        for ds in datasets:
+            svg = self._chart_recall_vs_qps(by_dataset.get(ds, []), ds, plt)
+            lines.append(f'<div class="chart-cell">{svg}</div>')
+
+        lines.append("</div>")  # close chart-grid
+
+        # Ingest throughput bar chart
+        svg = self._chart_ingest_throughput(by_dataset, datasets, plt)
+        lines.append(f'<div class="chart-full">{svg}</div>')
+
+        # Search QPS bar chart at reference ef
+        lines.append('<div class="chart-grid">')
+        for ds in datasets:
+            svg = self._chart_search_qps_bars(by_dataset.get(ds, []), ds, plt)
+            lines.append(f'<div class="chart-cell">{svg}</div>')
+        lines.append("</div>")
+
+        return "\n".join(lines)
+
+    def _chart_recall_vs_qps(self, runs: List[RunData], dataset: str, plt) -> str:
+        """Scatter plot: Recall@10 vs QPS for all databases."""
+        fig, ax = plt.subplots(figsize=(6, 4.5))
+
+        for run in sorted(runs, key=lambda r: r.database):
+            hnsw = sorted(
+                [s for s in run.search_results if s.index_type.lower() == "hnsw" and s.ef_search],
+                key=lambda s: s.ef_search,
+            )
+            if not hnsw:
+                continue
+
+            recalls = [s.recall_at_10 for s in hnsw if s.recall_at_10]
+            qps_vals = [s.qps for s in hnsw if s.recall_at_10]
+            if not recalls:
+                continue
+
+            color = _get_color(run.database)
+            marker = _get_marker(run.database)
+
+            ax.plot(recalls, qps_vals, marker=marker, color=color, label=run.database,
+                    markersize=8, linewidth=1.5, linestyle="-", zorder=3)
+
+            # FLAT as separate point (triangle marker)
+            flat = next(
+                (s for s in run.search_results if s.index_type.lower() == "flat" and s.recall_at_10),
+                None,
+            )
+            if flat and flat.recall_at_10:
+                ax.scatter([flat.recall_at_10], [flat.qps], marker="x", color=color,
+                          s=60, zorder=4, alpha=0.6)
+
+        ax.set_xlabel("Recall@10")
+        ax.set_ylabel("QPS (log scale)")
+        ax.set_yscale("log")
+        ax.set_title(f"Recall vs QPS — {dataset}")
+        ax.legend(fontsize=7, loc="upper left", framealpha=0.9)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(left=0.65, right=1.01)
+
+        fig.tight_layout()
+        return _fig_to_svg(fig)
+
+    def _chart_ingest_throughput(
+        self,
+        by_dataset: Dict[str, List[RunData]],
+        datasets: List[str],
+        plt,
+    ) -> str:
+        """Horizontal grouped bar chart: ingest throughput (HNSW) per database."""
+        import numpy as np
+
+        # Collect (db_name, {ds: throughput})
+        all_dbs = sorted(set(r.database for ds_runs in by_dataset.values() for r in ds_runs))
+
+        data: Dict[str, Dict[str, float]] = {}
+        for db_name in all_dbs:
+            data[db_name] = {}
+            for ds in datasets:
+                run = next((r for r in by_dataset.get(ds, []) if r.database == db_name), None)
+                if run:
+                    hnsw = next((i for i in run.ingest_results if i.index_type.lower() == "hnsw"), None)
+                    data[db_name][ds] = hnsw.throughput_vps if hnsw else 0
+                else:
+                    data[db_name][ds] = 0
+
+        # Sort by max throughput across datasets (descending)
+        sorted_dbs = sorted(all_dbs, key=lambda db: max(data[db].values()), reverse=True)
+
+        fig, ax = plt.subplots(figsize=(8, max(3, len(sorted_dbs) * 0.5 + 1)))
+
+        y = np.arange(len(sorted_dbs))
+        bar_height = 0.8 / len(datasets) if datasets else 0.8
+        ds_colors = ["#2563eb", "#e41a1c", "#4daf4a", "#ff7f00"]  # per-dataset colors
+
+        for i, ds in enumerate(datasets):
+            offsets = y - 0.4 + bar_height * (i + 0.5)
+            values = [data[db].get(ds, 0) for db in sorted_dbs]
+            ax.barh(offsets, values, height=bar_height * 0.9,
+                    label=ds, color=ds_colors[i % len(ds_colors)], alpha=0.85)
+            # Add value labels
+            for j, v in enumerate(values):
+                if v > 0:
+                    ax.text(v + max(values) * 0.01, offsets[j], f"{v:,.0f}",
+                            va="center", fontsize=7, color="#333")
+
+        ax.set_yticks(y)
+        ax.set_yticklabels(sorted_dbs)
+        ax.set_xlabel("Vectors/sec (HNSW ingest)")
+        ax.set_title("Ingest Throughput by Database")
+        ax.legend(fontsize=8)
+        ax.grid(True, axis="x", alpha=0.3)
+        ax.invert_yaxis()
+
+        fig.tight_layout()
+        return _fig_to_svg(fig)
+
+    def _chart_search_qps_bars(self, runs: List[RunData], dataset: str, plt) -> str:
+        """Horizontal bar chart: search QPS at reference efSearch."""
+        import numpy as np
+
+        db_qps: List[Tuple[str, float, Optional[float]]] = []
+        for run in runs:
+            result = next(
+                (s for s in run.search_results
+                 if s.index_type.lower() == "hnsw" and s.ef_search == self.REFERENCE_EF),
+                None,
+            )
+            if result:
+                db_qps.append((run.database, result.qps, result.recall_at_10))
+
+        if not db_qps:
+            return ""
+
+        db_qps.sort(key=lambda x: x[1], reverse=True)
+
+        fig, ax = plt.subplots(figsize=(6, max(2.5, len(db_qps) * 0.4 + 1)))
+
+        names = [x[0] for x in db_qps]
+        values = [x[1] for x in db_qps]
+        recalls = [x[2] for x in db_qps]
+        colors = [_get_color(n) for n in names]
+
+        y = np.arange(len(names))
+        ax.barh(y, values, color=colors, alpha=0.85)
+
+        # Annotate with recall
+        for i, (v, r) in enumerate(zip(values, recalls)):
+            label = f"{v:,.0f}"
+            if r is not None:
+                label += f"  (R@10={r:.3f})"
+            ax.text(v + max(values) * 0.01, i, label, va="center", fontsize=7)
+
+        ax.set_yticks(y)
+        ax.set_yticklabels(names)
+        ax.set_xlabel("QPS")
+        ax.set_title(f"Search QPS at ef={self.REFERENCE_EF} — {dataset}")
+        ax.grid(True, axis="x", alpha=0.3)
+        ax.invert_yaxis()
+
+        fig.tight_layout()
+        return _fig_to_svg(fig)
+
+    # -----------------------------------------------------------------
+    # Key Findings (cross-dataset)
+    # -----------------------------------------------------------------
+    def _render_findings(
+        self,
+        by_dataset: Dict[str, List[RunData]],
+        datasets: List[str],
+    ) -> str:
+        findings: List[str] = []
+
+        # 1. Best client-server ingest per dataset
+        for ds in datasets:
+            runs = by_dataset.get(ds, [])
+            cs_ingest = []
+            for r in runs:
+                if r.metadata.get("architecture") != "client-server":
+                    continue
+                hnsw = next((i for i in r.ingest_results if i.index_type.lower() == "hnsw"), None)
+                if hnsw:
+                    cs_ingest.append((r.database, hnsw.throughput_vps))
+
+            if cs_ingest:
+                best = max(cs_ingest, key=lambda x: x[1])
+                findings.append(
+                    f"<strong>{ds} Ingest</strong>: {best[0]} achieved the highest client-server "
+                    f"HNSW ingest at {best[1]:,.0f} vectors/sec."
+                )
+
+        # 2. Embedded vs client-server gap
+        for ds in datasets:
+            runs = by_dataset.get(ds, [])
+            embedded = [(r.database, s.qps) for r in runs for s in r.search_results
+                        if r.metadata.get("architecture") == "embedded"
+                        and s.index_type.lower() == "hnsw" and s.ef_search == self.REFERENCE_EF]
+            cs = [(r.database, s.qps) for r in runs for s in r.search_results
+                  if r.metadata.get("architecture") == "client-server"
+                  and s.index_type.lower() == "hnsw" and s.ef_search == self.REFERENCE_EF]
+
+            if embedded and cs:
+                best_emb = max(embedded, key=lambda x: x[1])
+                best_cs = max(cs, key=lambda x: x[1])
+                if best_cs[1] > 0:
+                    ratio = best_emb[1] / best_cs[1]
+                    if ratio > 1.5:
+                        findings.append(
+                            f"<strong>{ds} Embedded vs Client-Server</strong>: "
+                            f"{best_emb[0]} (embedded) at {best_emb[1]:,.0f} QPS is "
+                            f"{ratio:.1f}x faster than the best client-server ({best_cs[0]} at "
+                            f"{best_cs[1]:,.0f} QPS)."
+                        )
+
+        # 3. Batch search speedup
+        for ds in datasets:
+            runs = by_dataset.get(ds, [])
+            speedups = []
+            for r in runs:
+                seq = next(
+                    (s for s in r.search_results
+                     if s.index_type.lower() == "hnsw" and s.ef_search == self.REFERENCE_EF),
+                    None,
+                )
+                batch = next(
+                    (s for s in r.search_results
+                     if s.index_type.upper() == "HNSW_BATCH" and s.ef_search == self.REFERENCE_EF),
+                    None,
+                )
+                if seq and batch and seq.qps > 0:
+                    speedups.append((r.database, batch.qps / seq.qps))
+
+            if speedups:
+                best = max(speedups, key=lambda x: x[1])
+                if best[1] > 2:
+                    findings.append(
+                        f"<strong>{ds} Batch Speedup</strong>: {best[0]} achieves "
+                        f"{best[1]:.1f}x throughput improvement with batch search."
+                    )
+
+        # 4. Cross-dataset consistency
+        if len(datasets) >= 2:
+            db_ranks: Dict[str, List[int]] = {}
+            for ds in datasets:
+                runs = by_dataset.get(ds, [])
+                cs_results = [
+                    (r.database, next(
+                        (s.qps for s in r.search_results
+                         if s.index_type.lower() == "hnsw" and s.ef_search == self.REFERENCE_EF),
+                        0,
+                    ))
+                    for r in runs if r.metadata.get("architecture") == "client-server"
+                ]
+                cs_results.sort(key=lambda x: x[1], reverse=True)
+                for rank, (name, _) in enumerate(cs_results, 1):
+                    db_ranks.setdefault(name, []).append(rank)
+
+            # Find databases with consistent ranking
+            for name, ranks in db_ranks.items():
+                if len(ranks) >= 2 and max(ranks) - min(ranks) <= 1:
+                    findings.append(
+                        f"<strong>Consistency</strong>: {name} ranks #{min(ranks)} across "
+                        f"all datasets tested — consistent performance across different "
+                        f"vector dimensions and distributions."
+                    )
+
+        if not findings:
+            return ""
+
+        items = "".join(f"<li>{f}</li>" for f in findings)
+        return f"""
+        <h2>Key Findings</h2>
+        <ol class="findings">{items}</ol>"""
+
+    # -----------------------------------------------------------------
+    # Per-dataset details (collapsible)
+    # -----------------------------------------------------------------
+    def _render_per_dataset_details(
+        self,
+        by_dataset: Dict[str, List[RunData]],
+        datasets: List[str],
+    ) -> str:
+        lines: List[str] = ["<h2>Per-Dataset Details</h2>"]
+
+        for i, ds in enumerate(datasets):
+            runs = by_dataset.get(ds, [])
+            if not runs:
+                continue
+
+            open_attr = " open" if i == 0 else ""
+            lines.append(f'<details{open_attr}>')
+            lines.append(f'<summary><strong>{ds}</strong> — {runs[0].vector_count:,} vectors, '
+                         f'{runs[0].dimensions}D</summary>')
+
+            # Search performance table (sequential)
+            lines.append("<h3>Search Performance (Sequential)</h3>")
+            lines.append(self._search_table(runs, batch=False))
+
+            # QPS vs Recall tradeoff
+            lines.append("<h3>QPS vs Recall Tradeoff</h3>")
+            lines.append(self._qps_recall_table(runs))
+
+            # Batch search (if available)
+            has_batch = any(
+                s.index_type.upper().endswith("_BATCH")
+                for r in runs for s in r.search_results
+            )
+            if has_batch:
+                lines.append("<h3>Batch Search</h3>")
+                lines.append('<p class="note">All queries sent in a single API call. '
+                             'Per-query latency unavailable.</p>')
+                lines.append(self._search_table(runs, batch=True))
+
+            lines.append("</details>")
+
+        return "\n".join(lines)
+
+    def _search_table(self, runs: List[RunData], batch: bool = False) -> str:
+        """Render search results table for a single dataset."""
+        suffix = "_BATCH" if batch else ""
+        rows: List[str] = []
+
+        if batch:
+            header = "<tr><th>Database</th><th>Index</th><th>Config</th><th>QPS</th><th>R@10</th><th>R@100</th></tr>"
+        else:
+            header = "<tr><th>Database</th><th>Index</th><th>Config</th><th>QPS</th><th>R@10</th><th>R@100</th><th>P50 (ms)</th><th>P95 (ms)</th><th>P99 (ms)</th></tr>"
+
+        for run in sorted(runs, key=lambda r: r.database):
+            for s in sorted(run.search_results, key=lambda x: (x.index_type, x.ef_search or 0)):
+                if batch:
+                    if not s.index_type.upper().endswith("_BATCH"):
+                        continue
+                else:
+                    if s.index_type.upper().endswith("_BATCH"):
+                        continue
+
+                config = f"ef={s.ef_search}" if s.ef_search else "-"
+                r10 = f"{s.recall_at_10:.4f}" if s.recall_at_10 else "-"
+                r100 = f"{s.recall_at_100:.4f}" if s.recall_at_100 else "-"
+
+                idx_display = s.index_type.upper().replace("_BATCH", "")
+
+                if batch:
+                    rows.append(
+                        f"<tr><td>{run.database}</td><td>{idx_display}</td>"
+                        f"<td>{config}</td><td>{s.qps:,.0f}</td>"
+                        f"<td>{r10}</td><td>{r100}</td></tr>"
+                    )
+                else:
+                    p50 = f"{s.p50_ms:.2f}" if s.p50_ms else "-"
+                    p95 = f"{s.p95_ms:.2f}" if s.p95_ms else "-"
+                    p99 = f"{s.p99_ms:.2f}" if s.p99_ms else "-"
+                    rows.append(
+                        f"<tr><td>{run.database}</td><td>{idx_display}</td>"
+                        f"<td>{config}</td><td>{s.qps:,.0f}</td>"
+                        f"<td>{r10}</td><td>{r100}</td>"
+                        f"<td>{p50}</td><td>{p95}</td><td>{p99}</td></tr>"
+                    )
+
+        return f'<div class="table-wrap"><table><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table></div>'
+
+    def _qps_recall_table(self, runs: List[RunData]) -> str:
+        """Render QPS vs Recall tradeoff table (HNSW only)."""
+        # Collect all ef values
+        all_ef: set = set()
+        for r in runs:
+            for s in r.search_results:
+                if s.index_type.lower() == "hnsw" and s.ef_search:
+                    all_ef.add(s.ef_search)
+        ef_values = sorted(all_ef)
+
+        if not ef_values:
+            return ""
+
+        header = "<tr><th>Database</th>"
+        for ef in ef_values:
+            header += f"<th>ef={ef} QPS</th><th>ef={ef} R@10</th>"
+        header += "</tr>"
+
+        rows: List[str] = []
+        for run in sorted(runs, key=lambda r: r.database):
+            row = f"<tr><td>{run.database}</td>"
+            for ef in ef_values:
+                result = next(
+                    (s for s in run.search_results
+                     if s.index_type.lower() == "hnsw" and s.ef_search == ef),
+                    None,
+                )
+                if result:
+                    r10 = f"{result.recall_at_10:.3f}" if result.recall_at_10 else "-"
+                    row += f"<td>{result.qps:,.0f}</td><td>{r10}</td>"
+                else:
+                    row += "<td>-</td><td>-</td>"
+            row += "</tr>"
+            rows.append(row)
+
+        return f'<div class="table-wrap"><table><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table></div>'
+
+    # -----------------------------------------------------------------
+    # Configuration section
+    # -----------------------------------------------------------------
+    def _render_config_section(
+        self,
+        runs: List[RunData],
+        bench_config: Dict[str, Any],
+        datasets_meta: Dict[str, Any],
+    ) -> str:
+        lines: List[str] = ["<h2>Benchmark Configuration</h2>"]
+
+        # Datasets table
+        result_datasets = set(r.dataset.upper() for r in runs)
+        ds_entries = []
+        for ds_key, ds_meta in datasets_meta.items():
+            if not isinstance(ds_meta, dict):
+                continue
+            if ds_key.upper() in result_datasets or ds_key in result_datasets:
+                ds_entries.append(ds_meta)
+
+        if ds_entries:
+            lines.append("<h3>Datasets</h3>")
+            rows = ""
+            for ds_meta in ds_entries:
+                name = ds_meta.get("name", "")
+                vectors = f"{ds_meta.get('vectors', 0):,}" if ds_meta.get("vectors") else "-"
+                dims = ds_meta.get("dimensions", "-")
+                metric = ds_meta.get("metric", "L2")
+                purpose = ds_meta.get("purpose", "")
+                purpose_short = purpose.split(".")[0] + "." if purpose else "-"
+                rows += f"<tr><td>{name}</td><td>{vectors}</td><td>{dims}</td><td>{metric}</td><td>{purpose_short}</td></tr>"
+
+            lines.append(f'''<div class="table-wrap"><table>
+            <thead><tr><th>Dataset</th><th>Vectors</th><th>Dims</th><th>Metric</th><th>Purpose</th></tr></thead>
+            <tbody>{rows}</tbody></table></div>''')
+
+        # Index types
+        indexes = bench_config.get("indexes", {})
+        if indexes:
+            lines.append("<h3>Index Types Tested</h3><ul>")
+            for idx_name, idx_config in indexes.items():
+                desc = idx_config.get("description", "") if isinstance(idx_config, dict) else ""
+                if desc and "not yet implemented" not in desc.lower():
+                    lines.append(f"<li><strong>{idx_name.upper()}</strong>: {desc}</li>")
+            lines.append("</ul>")
+
+        # Metrics glossary
+        metrics = bench_config.get("metrics", {})
+        if metrics:
+            lines.append("<h3>Metrics Glossary</h3>")
+            rows = ""
+            for key, info in metrics.items():
+                if isinstance(info, dict):
+                    rows += f"<tr><td><strong>{info.get('name', key)}</strong></td><td>{info.get('description', '')}</td></tr>"
+            lines.append(f'<div class="table-wrap"><table><thead><tr><th>Metric</th><th>Description</th></tr></thead>'
+                         f'<tbody>{rows}</tbody></table></div>')
+
+        # Database Configuration Summary
+        lines.append("<h3>Database Configuration</h3>")
+        db_rows = ""
+        for run in sorted(set(r.database for r in runs)):
+            # Find a run for this database
+            sample = next(r for r in runs if r.database == run)
+            meta = sample.metadata
+            db_rows += (
+                f"<tr><td>{sample.database}</td><td>{sample.db_version or 'N/A'}</td>"
+                f"<td>{meta.get('architecture', 'N/A')}</td>"
+                f"<td>{meta.get('protocol', 'N/A')}</td>"
+                f"<td>{meta.get('persistence', 'N/A')}</td>"
+                f"<td>{meta.get('license', 'N/A')}</td></tr>"
+            )
+
+        lines.append(f'''<div class="table-wrap"><table>
+        <thead><tr><th>Database</th><th>Version</th><th>Architecture</th><th>Protocol</th><th>Persistence</th><th>License</th></tr></thead>
+        <tbody>{db_rows}</tbody></table></div>''')
+
+        # Database notes
+        notes = [(r.database, r.metadata.get("notes")) for r in runs if r.metadata.get("notes")]
+        seen_dbs = set()
+        if notes:
+            lines.append("<h3>Database Notes</h3><ul>")
+            for db_name, note in sorted(notes):
+                if db_name not in seen_dbs:
+                    lines.append(f"<li><strong>{db_name}</strong>: {note}</li>")
+                    seen_dbs.add(db_name)
+            lines.append("</ul>")
+
+        return "\n".join(lines)
+
+    # -----------------------------------------------------------------
+    # Methodology
+    # -----------------------------------------------------------------
+    def _render_methodology(self) -> str:
+        return """
+        <h2>Methodology</h2>
+        <ul>
+            <li>Each database was tested with the same dataset and query workload</li>
+            <li>HNSW indexes used M=16, efConstruction=64 (consistent across all databases)</li>
+            <li>Search tests used 10,000 queries with 100 warmup queries, executed sequentially (single-client, one-at-a-time)</li>
+            <li>Recall is calculated against brute-force ground truth provided with each dataset</li>
+            <li>Client-server databases run in Docker containers with consistent CPU/memory limits</li>
+            <li>FAISS runs in-process (no network overhead) — shown as embedded baseline</li>
+        </ul>"""
+
+    # -----------------------------------------------------------------
+    # HTML wrapper
+    # -----------------------------------------------------------------
+    def _wrap_html(self, body: str) -> str:
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Database Benchmark Report</title>
+    <style>
+        :root {{
+            --primary: #2563eb;
+            --text: #1f2937;
+            --border: #e5e7eb;
+            --bg-alt: #f9fafb;
+            --bg-code: #f3f4f6;
+            --green: #16a34a;
+            --red: #dc2626;
+        }}
+
+        * {{ box-sizing: border-box; }}
+
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #fff;
+        }}
+
+        h1 {{
+            color: var(--primary);
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 0.5rem;
+        }}
+
+        h2 {{
+            color: var(--text);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.3rem;
+            margin-top: 2.5rem;
+        }}
+
+        h3 {{ margin-top: 1.5rem; }}
+
+        p.meta {{ color: #6b7280; font-size: 0.95rem; }}
+        p.note {{ color: #6b7280; font-size: 0.9rem; font-style: italic; }}
+
+        /* Tables */
+        .table-wrap {{ overflow-x: auto; }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.875rem;
+        }}
+
+        th, td {{
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            border: 1px solid var(--border);
+            white-space: nowrap;
+        }}
+
+        th {{ background: var(--bg-code); font-weight: 600; }}
+        tr:nth-child(even) {{ background: var(--bg-alt); }}
+        tr:hover {{ background: #f3f4f6; }}
+
+        /* Rank badges */
+        .rank-top {{ background: #dcfce7 !important; }}
+        .rank-bottom {{ background: #fee2e2 !important; }}
+
+        /* Chart grid */
+        .chart-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin: 1rem 0;
+        }}
+
+        .chart-cell {{ text-align: center; }}
+        .chart-cell svg, .chart-full svg {{
+            max-width: 100%;
+            height: auto;
+        }}
+        .chart-full {{ margin: 1.5rem 0; text-align: center; }}
+
+        /* Collapsible details */
+        details {{
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin: 0.75rem 0;
+            padding: 0;
+        }}
+
+        summary {{
+            cursor: pointer;
+            padding: 0.75rem 1rem;
+            background: var(--bg-alt);
+            border-radius: 6px;
+            user-select: none;
+        }}
+
+        summary:hover {{ background: #f3f4f6; }}
+
+        details[open] summary {{
+            border-bottom: 1px solid var(--border);
+            border-radius: 6px 6px 0 0;
+        }}
+
+        details > :not(summary) {{
+            padding: 0 1rem;
+        }}
+
+        /* Findings */
+        ol.findings li {{
+            margin: 0.75rem 0;
+            line-height: 1.5;
+        }}
+
+        /* Responsive */
+        @media (max-width: 768px) {{
+            body {{ padding: 1rem; }}
+            .chart-grid {{ grid-template-columns: 1fr; }}
+            table {{ font-size: 0.8rem; }}
+            th, td {{ padding: 0.4rem; }}
+        }}
+
+        @media print {{
+            body {{ padding: 0; font-size: 11pt; }}
+            h1 {{ font-size: 16pt; }}
+            h2 {{ font-size: 13pt; page-break-after: avoid; }}
+            table {{ font-size: 9pt; page-break-inside: avoid; }}
+            details {{ break-inside: avoid; }}
+            details[open] {{ border: none; }}
+            summary {{ background: none; }}
+        }}
+    </style>
+</head>
+<body>
+{body}
+</body>
+</html>"""

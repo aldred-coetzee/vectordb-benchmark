@@ -211,16 +211,11 @@ def generate_and_upload_report(
         print("ERROR: Report generation failed")
         return False
 
-    # Upload per-dataset reports and merged DB to S3
+    # Upload combined report and merged DB to S3
     uploads: list[tuple[str, str, str]] = [
         (f"results/benchmark-{run_id}.db", f"runs/{run_id}/benchmark.db", "application/octet-stream"),
+        (f"results/report-{run_id}.html", f"runs/{run_id}/report.html", "text/html"),
     ]
-
-    # Find all per-dataset report files (report-{run_id}-{dataset}.html)
-    import glob
-    for report_file in sorted(glob.glob(f"results/report-{run_id}-*.html")):
-        filename = Path(report_file).name
-        uploads.append((report_file, f"runs/{run_id}/{filename}", "text/html"))
 
     for local_path, s3_key, content_type in uploads:
         if Path(local_path).exists():

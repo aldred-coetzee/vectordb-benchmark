@@ -289,6 +289,12 @@ def run_with_config(
             print(f"Error connecting to database: {e}")
             raise
 
+        # Detect version from the running server/library
+        detected_version = client.get_version()
+        if detected_version and detected_version != "unknown":
+            db_version = detected_version
+            print(f"  Detected version: {db_version}")
+
         # Filter indexes by what the client supports
         supported = get_supported_indexes(client)
         indexes_to_run = filter_indexes(requested_indexes, supported, database_name)

@@ -3,13 +3,16 @@
 Generate benchmark comparison reports.
 
 Usage:
-    # Default: one report per dataset in the DB
-    python generate_report.py --db-path results/benchmark.db --output results/report.html
+    # Default: combined report with charts (multi-dataset)
+    python generate_report.py --db-path results/benchmark.db -o results/report.html
 
     # Single dataset
-    python generate_report.py --dataset sift --output results/report-sift.html
+    python generate_report.py --dataset sift -o results/report-sift.html
 
-    # From a run ID (generates per-dataset reports automatically)
+    # Per-dataset reports (old behavior)
+    python generate_report.py --per-dataset --db-path results/benchmark.db -o results/report.html
+
+    # From a run ID
     python generate_report.py --run-id 2026-02-05-1919
 
     # Specific databases
@@ -23,7 +26,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from benchmark.report_generator import ReportGenerator
+from benchmark.report_generator import ComparisonReportGenerator, ReportGenerator
 
 
 def main():
@@ -32,17 +35,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Generate per-dataset HTML reports from a run
+    # Combined report with charts (default for multi-dataset)
     python generate_report.py --run-id 2026-02-05-1919
 
-    # Generate HTML report for a single dataset
+    # Per-dataset reports (old behavior)
+    python generate_report.py --per-dataset --run-id 2026-02-05-1919
+
+    # Single dataset
     python generate_report.py --dataset sift --db-path results/benchmark.db -o results/report-sift.html
 
     # Filter specific databases
     python generate_report.py --databases faiss,kdbai,qdrant
-
-    # Use specific run IDs
-    python generate_report.py --runs 1,2,3
         """,
     )
 
@@ -50,13 +53,12 @@ Examples:
         "--format", "-f",
         choices=["markdown", "html"],
         default="markdown",
-        help="Output format (default: markdown)",
+        help="Output format (default: markdown, auto-detected from .html extension)",
     )
 
     parser.add_argument(
         "--output", "-o",
-        help="Output file path (default: stdout). "
-             "When generating per-dataset reports, dataset name is inserted before extension.",
+        help="Output file path (default: stdout)",
     )
 
     parser.add_argument(
@@ -72,14 +74,18 @@ Examples:
     parser.add_argument(
         "--run-id",
         help="Orchestrator run ID (e.g., 2026-02-05-1816). "
-             "Auto-resolves db-path to results/benchmark-{run_id}.db "
-             "and generates per-dataset reports.",
+             "Auto-resolves db-path to results/benchmark-{run_id}.db.",
     )
 
     parser.add_argument(
         "--dataset",
-        help="Single dataset to report on (e.g., sift, gist). "
-             "If omitted with multi-dataset DB, generates one report per dataset.",
+        help="Single dataset to report on (e.g., sift, gist)",
+    )
+
+    parser.add_argument(
+        "--per-dataset",
+        action="store_true",
+        help="Generate separate per-dataset reports instead of combined",
     )
 
     parser.add_argument(
@@ -130,33 +136,21 @@ Examples:
             print("Error: --runs must be comma-separated integers", file=sys.stderr)
             sys.exit(1)
 
-    # Generate report
-    generator = ReportGenerator(db_path=args.db_path, configs_dir=args.configs_dir)
-
-    try:
-        if args.dataset:
-            # Single dataset report
-            report = generator.generate_report(
-                format=args.format,
-                databases=databases,
-                run_ids=run_ids,
-                dataset=args.dataset,
-            )
-            _write_report(report, args.output)
-        else:
-            # Check how many datasets exist
-            available_datasets = generator.get_datasets()
-
-            if len(available_datasets) <= 1:
-                # Single dataset — generate one report
+    # Single dataset or per-dataset mode → use original ReportGenerator
+    if args.dataset or args.per_dataset:
+        generator = ReportGenerator(db_path=args.db_path, configs_dir=args.configs_dir)
+        try:
+            if args.dataset:
                 report = generator.generate_report(
                     format=args.format,
                     databases=databases,
                     run_ids=run_ids,
+                    dataset=args.dataset,
                 )
                 _write_report(report, args.output)
             else:
-                # Multiple datasets — generate one report per dataset
+                # Per-dataset mode
+                available_datasets = generator.get_datasets()
                 ext = "html" if args.format == "html" else "md"
                 for ds in available_datasets:
                     report = generator.generate_report(
@@ -166,12 +160,20 @@ Examples:
                         dataset=ds,
                     )
                     if args.output:
-                        # Insert dataset name: report-RUN.html -> report-RUN-sift.html
                         base = Path(args.output)
                         ds_output = str(base.with_name(f"{base.stem}-{ds.lower()}.{ext}"))
                     else:
                         ds_output = None
                     _write_report(report, ds_output, label=ds)
+        finally:
+            generator.close()
+        return
+
+    # Default: combined report with charts
+    generator = ComparisonReportGenerator(db_path=args.db_path, configs_dir=args.configs_dir)
+    try:
+        report = generator.generate(databases=databases, run_ids=run_ids)
+        _write_report(report, args.output)
     finally:
         generator.close()
 

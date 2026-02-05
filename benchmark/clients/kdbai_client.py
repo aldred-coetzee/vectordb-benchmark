@@ -35,6 +35,17 @@ class KDBAIClient(BaseVectorDBClient):
         """Return the database name."""
         return "KDB.AI"
 
+    def get_version(self) -> str:
+        """Return KDB.AI client library version."""
+        try:
+            return kdbai.__version__
+        except AttributeError:
+            try:
+                import importlib.metadata
+                return importlib.metadata.version("kdbai-client")
+            except Exception:
+                return "unknown"
+
     def connect(self, endpoint: str = "http://localhost:8082", **kwargs) -> None:
         """
         Connect to KDB.AI.

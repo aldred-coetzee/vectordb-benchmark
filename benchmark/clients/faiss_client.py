@@ -35,6 +35,17 @@ class FAISSClient(BaseVectorDBClient):
         """Return the database name."""
         return "FAISS"
 
+    def get_version(self) -> str:
+        """Return FAISS library version."""
+        try:
+            return faiss.__version__
+        except AttributeError:
+            try:
+                import importlib.metadata
+                return importlib.metadata.version("faiss-cpu")
+            except Exception:
+                return "unknown"
+
     def connect(self, **kwargs) -> None:
         """
         Connect to FAISS (no-op since FAISS runs in-process).

@@ -61,6 +61,16 @@ class RedisClient(BaseVectorDBClient):
         except Exception as e:
             raise ConnectionError(f"Failed to connect to Redis: {e}")
 
+    def get_version(self) -> str:
+        """Return Redis server version."""
+        if self._client is None:
+            return "unknown"
+        try:
+            info = self._client.info("server")
+            return info.get("redis_version", "unknown")
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from Redis."""
         self._index_configs.clear()

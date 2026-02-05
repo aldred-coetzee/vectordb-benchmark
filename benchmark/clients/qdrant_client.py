@@ -72,6 +72,17 @@ class QdrantClient(BaseVectorDBClient):
         except Exception as e:
             raise ConnectionError(f"Failed to connect to Qdrant: {e}")
 
+    def get_version(self) -> str:
+        """Return Qdrant server version via REST API root endpoint."""
+        if self._client is None:
+            return "unknown"
+        try:
+            # qdrant-client exposes openapi_client with service API
+            info = self._client.http.service_api.root_api()
+            return info.version
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from Qdrant."""
         self._index_configs.clear()

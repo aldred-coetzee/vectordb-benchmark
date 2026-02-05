@@ -73,6 +73,13 @@ class MilvusClient(BaseVectorDBClient):
         except Exception as e:
             raise ConnectionError(f"Failed to connect to Milvus: {e}")
 
+    def get_version(self) -> str:
+        """Return Milvus server version."""
+        try:
+            return utility.get_server_version()
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from Milvus."""
         self._index_configs.clear()

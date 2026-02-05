@@ -45,6 +45,17 @@ class LanceDBClient(BaseVectorDBClient):
         """
         return set()
 
+    def get_version(self) -> str:
+        """Return LanceDB library version."""
+        try:
+            return lancedb.__version__
+        except AttributeError:
+            try:
+                import importlib.metadata
+                return importlib.metadata.version("lancedb")
+            except Exception:
+                return "unknown"
+
     def connect(self, endpoint: str = "./data/lancedb", **kwargs) -> None:
         """
         Connect to LanceDB (creates/opens a local database).

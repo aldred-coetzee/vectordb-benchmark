@@ -95,6 +95,19 @@ class PGVectorClient(BaseVectorDBClient):
         except Exception as e:
             raise ConnectionError(f"Failed to connect to PostgreSQL: {e}")
 
+    def get_version(self) -> str:
+        """Return pgvector extension version."""
+        if self._cursor is None:
+            return "unknown"
+        try:
+            self._cursor.execute(
+                "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+            )
+            row = self._cursor.fetchone()
+            return row[0] if row else "unknown"
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from PostgreSQL."""
         self._index_configs.clear()

@@ -164,6 +164,14 @@ class BaseVectorDBClient(ABC):
         """
         pass
 
+    def get_version(self) -> str:
+        """Return the version of the database server or library.
+
+        Subclasses should override this to query the actual version.
+        Called after connect().
+        """
+        return "unknown"
+
     @property
     def has_batch_search(self) -> bool:
         """Whether this client supports native batch search."""

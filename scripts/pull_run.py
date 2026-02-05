@@ -244,10 +244,10 @@ Examples:
     if failed:
         print(f"  Failed:    {len(failed)} ({', '.join(failed)})")
 
-    # 5. Generate per-dataset reports
+    # 5. Generate combined report (with charts)
     if not args.no_report:
         report_path = output_dir / f"report-{run_id}.html"
-        print(f"\nGenerating reports: {report_path}")
+        print(f"\nGenerating report: {report_path}")
 
         cmd = [
             sys.executable, "generate_report.py",
@@ -262,7 +262,7 @@ Examples:
     print(f"\nDone!")
     print(f"  Database: {db_path}")
     if not args.no_report:
-        print(f"  Reports:  {output_dir}/report-{run_id}-*.html")
+        print(f"  Report:   {output_dir}/report-{run_id}.html")
 
 
 if __name__ == "__main__":

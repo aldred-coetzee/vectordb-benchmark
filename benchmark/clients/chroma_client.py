@@ -64,6 +64,15 @@ class ChromaClient(BaseVectorDBClient):
         except Exception as e:
             raise ConnectionError(f"Failed to connect to ChromaDB: {e}")
 
+    def get_version(self) -> str:
+        """Return ChromaDB server version."""
+        if self._client is None:
+            return "unknown"
+        try:
+            return self._client.get_version()
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from ChromaDB."""
         self._collections.clear()

@@ -70,6 +70,16 @@ class WeaviateClient(BaseVectorDBClient):
         except Exception as e:
             raise ConnectionError(f"Failed to connect to Weaviate: {e}")
 
+    def get_version(self) -> str:
+        """Return Weaviate server version."""
+        if self._client is None:
+            return "unknown"
+        try:
+            meta = self._client.get_meta()
+            return meta.get("version", "unknown")
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from Weaviate."""
         self._index_configs.clear()
