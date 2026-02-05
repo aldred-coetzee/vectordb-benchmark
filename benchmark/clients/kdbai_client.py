@@ -93,7 +93,7 @@ class KDBAIClient(BaseVectorDBClient):
             indexes = [
                 {
                     "name": index_config.name,
-                    "type": "flat",
+                    "type": "qFlat",
                     "column": "vectors",
                     "params": {
                         "dims": dimension,
@@ -105,7 +105,7 @@ class KDBAIClient(BaseVectorDBClient):
             indexes = [
                 {
                     "name": index_config.name,
-                    "type": "hnsw",
+                    "type": "qHnsw",
                     "column": "vectors",
                     "params": {
                         "dims": dimension,

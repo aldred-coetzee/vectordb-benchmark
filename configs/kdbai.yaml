@@ -36,7 +36,7 @@ metadata:
   persistence: disk
   license: Commercial
   url: https://kdb.ai
-  notes: "qIPC protocol. THREADS env var controls parallelism for qHNSW operations (set to match CPU cores). Requires commercial license."
+  notes: "qIPC protocol. Uses qFlat/qHnsw (disk-backed, multithreaded) not flat/hnsw (in-memory, single-threaded) — ~72% faster search with THREADS. THREADS env var must match CPU cores. Requires commercial license."
 
 # KDB.AI specific parameters
 params:
