@@ -103,12 +103,19 @@ class WeaviateClient(BaseVectorDBClient):
 
         collection_name = self._get_collection_name(table_name)
 
+        # Determine distance metric
+        metric = index_config.params.get("metric", "L2")
+        if metric.lower() in ("cosine", "angular"):
+            distance_metric = VectorDistances.COSINE
+        else:
+            distance_metric = VectorDistances.L2_SQUARED
+
         # Build vector index config based on index type
         if index_config.index_type == "flat":
             # Weaviate doesn't have a true flat index
             # Use HNSW with high ef for near-exact search
             vector_index_config = Configure.VectorIndex.hnsw(
-                distance_metric=VectorDistances.L2_SQUARED,
+                distance_metric=distance_metric,
                 ef=256,
                 ef_construction=128,
                 max_connections=64,
@@ -117,7 +124,7 @@ class WeaviateClient(BaseVectorDBClient):
             m = index_config.params.get("M", 16)
             ef_construct = index_config.params.get("efConstruction", 64)
             vector_index_config = Configure.VectorIndex.hnsw(
-                distance_metric=VectorDistances.L2_SQUARED,
+                distance_metric=distance_metric,
                 ef=64,  # Default ef for search
                 ef_construction=ef_construct,
                 max_connections=m,

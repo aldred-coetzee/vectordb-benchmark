@@ -2,9 +2,14 @@
 
 import struct
 from pathlib import Path
-from typing import Iterator, Tuple
+from typing import Iterator, Tuple, Union
 
 import numpy as np
+
+try:
+    import h5py
+except ImportError:
+    h5py = None
 
 
 def _read_vecs(filename: str, dtype: np.dtype) -> np.ndarray:
@@ -194,3 +199,145 @@ class TexmexDataset:
             ids = np.arange(start_idx, end_idx, dtype=np.int64)
             vectors = self.base_vectors[start_idx:end_idx]
             yield start_idx, ids, vectors
+
+
+class AnnBenchmarkDataset:
+    """HDF5 dataset loader for ann-benchmarks format (GloVe, DBpedia-OpenAI, etc.).
+
+    HDF5 keys: 'train' (base vectors), 'test' (query vectors), 'neighbors' (ground truth).
+    """
+
+    def __init__(self, dataset_path: str, name: str | None = None):
+        """
+        Initialize the HDF5 dataset loader.
+
+        Args:
+            dataset_path: Path to the .hdf5 file
+            name: Dataset name. If None, inferred from filename.
+        """
+        if h5py is None:
+            raise ImportError(
+                "h5py package not installed. "
+                "Install with: pip install h5py"
+            )
+
+        self.path = Path(dataset_path)
+        if not self.path.exists():
+            raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
+
+        # Infer name from filename (e.g., "glove-100-angular.hdf5" -> "glove-100")
+        if name is None:
+            stem = self.path.stem  # "glove-100-angular"
+            # Strip common suffixes like "-angular", "-euclidean"
+            for suffix in ("-angular", "-euclidean", "-jaccard", "-hamming"):
+                if stem.endswith(suffix):
+                    stem = stem[: -len(suffix)]
+                    break
+            name = stem
+        self.name = name
+
+        self._base_vectors: np.ndarray | None = None
+        self._query_vectors: np.ndarray | None = None
+        self._ground_truth: np.ndarray | None = None
+
+    def _load_hdf5(self) -> None:
+        """Load all data from HDF5 file."""
+        print(f"Loading HDF5 dataset from {self.path}...")
+        with h5py.File(self.path, "r") as f:
+            self._base_vectors = np.array(f["train"], dtype=np.float32)
+            self._query_vectors = np.array(f["test"], dtype=np.float32)
+            self._ground_truth = np.array(f["neighbors"], dtype=np.int32)
+        print(
+            f"Loaded {len(self._base_vectors):,} base vectors, "
+            f"{len(self._query_vectors):,} queries, "
+            f"{self._ground_truth.shape[1]} ground truth neighbors"
+        )
+
+    @property
+    def base_vectors(self) -> np.ndarray:
+        """Load and return base vectors."""
+        if self._base_vectors is None:
+            self._load_hdf5()
+        return self._base_vectors
+
+    @property
+    def query_vectors(self) -> np.ndarray:
+        """Load and return query vectors."""
+        if self._query_vectors is None:
+            self._load_hdf5()
+        return self._query_vectors
+
+    @property
+    def ground_truth(self) -> np.ndarray:
+        """Load and return ground truth nearest neighbor IDs."""
+        if self._ground_truth is None:
+            self._load_hdf5()
+        return self._ground_truth
+
+    @property
+    def dimensions(self) -> int:
+        """Return vector dimensionality."""
+        return self.base_vectors.shape[1]
+
+    @property
+    def num_base_vectors(self) -> int:
+        """Return number of base vectors."""
+        return self.base_vectors.shape[0]
+
+    @property
+    def num_query_vectors(self) -> int:
+        """Return number of query vectors."""
+        return self.query_vectors.shape[0]
+
+    def get_info(self) -> dict:
+        """Return dataset information."""
+        return {
+            "name": self.name.upper(),
+            "num_base_vectors": self.num_base_vectors,
+            "num_query_vectors": self.num_query_vectors,
+            "dimensions": self.dimensions,
+            "ground_truth_k": self.ground_truth.shape[1],
+        }
+
+    def load_base_vectors(self) -> None:
+        """Explicitly load base vectors into memory."""
+        _ = self.base_vectors
+
+    def get_batches(
+        self, batch_size: int = 50000
+    ) -> Iterator[Tuple[int, np.ndarray, np.ndarray]]:
+        """
+        Yield batches of base vectors with their IDs.
+
+        Args:
+            batch_size: Number of vectors per batch
+
+        Yields:
+            Tuple of (start_id, ids_array, vectors_array)
+        """
+        num_vectors = self.num_base_vectors
+        for start_idx in range(0, num_vectors, batch_size):
+            end_idx = min(start_idx + batch_size, num_vectors)
+            ids = np.arange(start_idx, end_idx, dtype=np.int64)
+            vectors = self.base_vectors[start_idx:end_idx]
+            yield start_idx, ids, vectors
+
+
+def load_dataset(
+    path: str, name: str | None = None
+) -> Union[TexmexDataset, AnnBenchmarkDataset]:
+    """
+    Auto-detect dataset format and return appropriate loader.
+
+    Args:
+        path: Path to dataset directory (fvecs) or .hdf5 file
+        name: Optional dataset name override
+
+    Returns:
+        TexmexDataset for directory-based fvecs, AnnBenchmarkDataset for HDF5
+    """
+    p = Path(path)
+    if p.suffix == ".hdf5" or p.suffix == ".h5":
+        return AnnBenchmarkDataset(path, name=name)
+    else:
+        return TexmexDataset(path, name=name)

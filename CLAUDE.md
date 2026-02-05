@@ -90,6 +90,9 @@ python generate_report.py --run-id 2026-02-05-1816
 
 # Generate dev datasets from full datasets
 python scripts/generate_dev_datasets.py --datasets sift
+
+# Download HDF5 datasets (GloVe, DBpedia-OpenAI)
+python scripts/download_datasets.py --datasets glove-100,dbpedia-openai
 ```
 
 ## Configuration Format (configs/*.yaml)
@@ -112,17 +115,26 @@ search_configs:
 
 All datasets include pre-computed query vectors and ground truth nearest neighbors, enabling recall calculation without brute-force.
 
-### Texmex Corpus (Primary) — ftp://ftp.irisa.fr/local/texmex/corpus/
+### Texmex Corpus — ftp://ftp.irisa.fr/local/texmex/corpus/
 
-The standard benchmark corpus with queries and ground truth included.
-Each dataset contains: `*_base.fvecs` (vectors), `*_query.fvecs` (queries), `*_groundtruth.ivecs` (true neighbors).
+Format: `.fvecs`/`.ivecs` — `*_base.fvecs` (vectors), `*_query.fvecs` (queries), `*_groundtruth.ivecs` (true neighbors).
 
 | Dataset | Vectors | Dims | Queries | Metric | Size | Purpose |
 |---------|---------|------|---------|--------|------|---------|
-| **SIFT-1M** | 1M | 128 | 10K | L2 | ~500MB | Current baseline |
-| **GIST-1M** | 1M | 960 | 1K | L2 | ~4GB | High-dimension stress |
-| **SIFT-10M** | 10M | 128 | 10K | L2 | ~5GB | Scale stress |
-| **GloVe-100** | 1.2M | 100 | 10K | Cosine | ~500MB | Cosine metric (NLP/embeddings) |
+| **SIFT-1M** | 1M | 128 | 10K | L2 | ~500MB | Baseline |
+| **GIST-1M** | 1M | 960 | 1K | L2 | ~4GB | Dimension stress |
+| **SIFT-10M** | 10M | 128 | 10K | L2 | ~5GB | Scale stress (not yet supported) |
+
+### ANN-Benchmarks (HDF5)
+
+Format: `.hdf5` — keys: `train` (base vectors), `test` (queries), `neighbors` (ground truth).
+
+| Dataset | Vectors | Dims | Queries | Metric | Size | Purpose |
+|---------|---------|------|---------|--------|------|---------|
+| **GloVe-100** | 1.18M | 100 | 10K | Cosine | ~463MB | Cosine metric |
+| **DBpedia-OpenAI-1M** | 1M | 1536 | 10K | Cosine | ~6GB | Production-representative (ada-002) |
+
+Download: `python scripts/download_datasets.py --datasets glove-100,dbpedia-openai`
 
 ### Dev Datasets (for development testing)
 
@@ -140,12 +152,28 @@ Dev datasets use recomputed exact ground truth (FAISS brute-force) and the same 
 ### Recommended Progression
 
 ```
-SIFT-1M → GIST-1M → SIFT-10M → GloVe-100
-   ↓         ↓          ↓          ↓
-baseline   dims       scale      cosine
+SIFT-1M → GIST-1M → GloVe-100 → DBpedia-OpenAI-1M
+   ↓         ↓          ↓              ↓
+baseline   dims      cosine     production (1536D, cosine)
 ```
 
-Four axes: baseline, dimension stress (960D), volume stress (10M), distance metric (cosine vs L2)
+Four axes: baseline (128D L2), dimension stress (960D L2), cosine metric (100D), production workload (1536D cosine)
+
+### Distance Metric Support
+
+All 9 database clients support both L2 and cosine distance. The metric is configured per-dataset in `benchmark.yaml` and propagated automatically to each client:
+
+| Client | L2 | Cosine |
+|--------|-----|--------|
+| FAISS | `IndexFlatL2` | `IndexFlatIP` + normalize |
+| Qdrant | `Distance.EUCLID` | `Distance.COSINE` |
+| Milvus | `metric_type: "L2"` | `metric_type: "COSINE"` |
+| ChromaDB | `hnsw:space: "l2"` | `hnsw:space: "cosine"` |
+| Weaviate | `VectorDistances.L2_SQUARED` | `VectorDistances.COSINE` |
+| pgvector | `<->` operator | `<=>` operator |
+| Redis | `DISTANCE_METRIC: "L2"` | `DISTANCE_METRIC: "COSINE"` |
+| KDB.AI | `metric: "L2"` | `metric: "CS"` |
+| LanceDB | `metric="L2"` | `metric="cosine"` |
 
 ## Current Limitations
 
@@ -636,15 +664,18 @@ Design consideration: Keep dataset/query loading modular so filtered queries can
 
 - **Texmex (.fvecs/.ivecs)**: Supported — SIFT-1M, GIST-1M
 - **Texmex (.bvecs)**: NOT YET SUPPORTED — SIFT-10M uses byte vectors, needs `read_bvecs()` function
-- **ANN-Benchmarks (HDF5)**: NOT YET SUPPORTED — GloVe-100 needs h5py integration
+- **ANN-Benchmarks (HDF5)**: Supported — GloVe-100, DBpedia-OpenAI-1M (`AnnBenchmarkDataset` class, requires `h5py`)
+- **Cosine distance**: Supported — all 9 clients handle metric from `benchmark.yaml` dataset config
 
 ### Dataset Paths
 
 Datasets use relative `data/` paths (configured in `benchmark.yaml`):
 - `data/sift/` — SIFT-1M (sift_base.fvecs, sift_query.fvecs, sift_groundtruth.ivecs)
 - `data/gist/` — GIST-1M (gist_base.fvecs, gist_query.fvecs, gist_groundtruth.ivecs)
+- `data/glove-100/glove-100-angular.hdf5` — GloVe-100 (HDF5, cosine)
+- `data/dbpedia-openai/dbpedia-openai-1000k-angular.hdf5` — DBpedia-OpenAI-1M (HDF5, cosine)
 - `data/sift-dev/` — Dev subset (10K vectors, 100 queries, recomputed ground truth)
 - `data/gist-dev/` — Dev subset (10K vectors, 100 queries, recomputed ground truth)
 
-**Local**: Datasets stored in project `data/` directory
+**Local**: Datasets stored in project `data/` directory. Download HDF5 datasets: `python scripts/download_datasets.py`
 **AWS**: Worker startup script creates symlink `data -> /data` (AMI has datasets at `/data/`)

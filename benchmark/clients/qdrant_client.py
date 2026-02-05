@@ -117,12 +117,19 @@ class QdrantClient(BaseVectorDBClient):
         else:
             raise ValueError(f"Unsupported index type: {index_config.index_type}")
 
+        # Determine distance metric
+        metric = index_config.params.get("metric", "L2")
+        if metric.lower() in ("cosine", "angular"):
+            distance = Distance.COSINE
+        else:
+            distance = Distance.EUCLID
+
         try:
             self._client.recreate_collection(
                 collection_name=table_name,
                 vectors_config=VectorParams(
                     size=dimension,
-                    distance=Distance.EUCLID,  # L2 distance
+                    distance=distance,
                     hnsw_config=hnsw_config if index_config.index_type == "hnsw" else None,
                 ),
             )

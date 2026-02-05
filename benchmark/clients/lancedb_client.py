@@ -163,8 +163,11 @@ class LanceDBClient(BaseVectorDBClient):
                 if row_count >= 1000000:
                     M = index_config.params.get("M", 16)
                     ef_construction = index_config.params.get("efConstruction", 64)
+                    lance_metric = index_config.params.get("metric", "L2")
+                    if lance_metric.lower() in ("cosine", "angular"):
+                        lance_metric = "cosine"
                     table.create_index(
-                        metric="L2",
+                        metric=lance_metric,
                         num_partitions=256,
                         num_sub_vectors=96,
                         index_type="IVF_HNSW_SQ",

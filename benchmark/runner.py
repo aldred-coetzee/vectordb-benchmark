@@ -10,7 +10,7 @@ import numpy as np
 SEARCH_PROGRESS_INTERVAL = 2000
 
 from .clients.base import BaseVectorDBClient, IndexConfig, SearchConfig
-from .data_loader import TexmexDataset
+from .data_loader import AnnBenchmarkDataset, TexmexDataset
 from .docker_monitor import DockerMonitor, MonitoringResult
 from .metrics import (
     calculate_latency_percentiles,
@@ -27,7 +27,7 @@ class BenchmarkRunner:
     def __init__(
         self,
         client: BaseVectorDBClient,
-        dataset: TexmexDataset,
+        dataset: TexmexDataset | AnnBenchmarkDataset,
         monitor: Optional[DockerMonitor] = None,
         batch_size: int = 50000,
         warmup_queries: int = 100,
@@ -343,6 +343,7 @@ class BenchmarkRunner:
         self,
         hnsw_ef_search_values: List[int] = None,
         indexes_to_run: List[str] = None,
+        metric: str = "L2",
     ) -> BenchmarkResults:
         """
         Run the complete benchmark suite.
@@ -391,7 +392,7 @@ class BenchmarkRunner:
         flat_config = IndexConfig(
             name="flat_index",
             index_type="flat",
-            params={"dims": self.dataset.dimensions, "metric": "L2"},
+            params={"dims": self.dataset.dimensions, "metric": metric},
         )
 
         hnsw_config = IndexConfig(
@@ -401,7 +402,7 @@ class BenchmarkRunner:
                 "dims": self.dataset.dimensions,
                 "M": 16,
                 "efConstruction": 64,
-                "metric": "L2",
+                "metric": metric,
             },
         )
 

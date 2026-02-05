@@ -88,6 +88,13 @@ class KDBAIClient(BaseVectorDBClient):
             {"name": "vectors", "type": "float32s"},
         ]
 
+        # Map metric name to KDB.AI value (L2 or CS for cosine)
+        metric = index_config.params.get("metric", "L2")
+        if metric.lower() in ("cosine", "angular"):
+            kdbai_metric = "CS"
+        else:
+            kdbai_metric = "L2"
+
         # Build index configuration
         if index_config.index_type == "flat":
             indexes = [
@@ -97,7 +104,7 @@ class KDBAIClient(BaseVectorDBClient):
                     "column": "vectors",
                     "params": {
                         "dims": dimension,
-                        "metric": index_config.params.get("metric", "L2"),
+                        "metric": kdbai_metric,
                     },
                 }
             ]
@@ -111,7 +118,7 @@ class KDBAIClient(BaseVectorDBClient):
                         "dims": dimension,
                         "M": index_config.params.get("M", 16),
                         "efConstruction": index_config.params.get("efConstruction", 64),
-                        "metric": index_config.params.get("metric", "L2"),
+                        "metric": kdbai_metric,
                     },
                 }
             ]

@@ -28,6 +28,7 @@ class FAISSClient(BaseVectorDBClient):
         self._id_maps: Dict[str, np.ndarray] = {}
         self._index_configs: Dict[str, IndexConfig] = {}
         self._dimensions: Dict[str, int] = {}
+        self._metrics: Dict[str, str] = {}  # table_name -> "L2" or "cosine"
 
     @property
     def name(self) -> str:
@@ -49,6 +50,7 @@ class FAISSClient(BaseVectorDBClient):
         self._id_maps.clear()
         self._index_configs.clear()
         self._dimensions.clear()
+        self._metrics.clear()
         print("FAISS indexes cleared")
 
     def create_table(
@@ -65,16 +67,22 @@ class FAISSClient(BaseVectorDBClient):
             dimension: Vector dimensionality
             index_config: Index configuration
         """
+        metric = index_config.params.get("metric", "L2")
+        use_ip = metric.lower() in ("cosine", "ip", "angular")
+
         if index_config.index_type == "flat":
-            # Create flat L2 index
-            index = faiss.IndexFlatL2(dimension)
+            if use_ip:
+                index = faiss.IndexFlatIP(dimension)
+            else:
+                index = faiss.IndexFlatL2(dimension)
         elif index_config.index_type == "hnsw":
-            # Create HNSW index with specified parameters
             M = index_config.params.get("M", 16)
             ef_construction = index_config.params.get("efConstruction", 64)
 
-            # IndexHNSWFlat(dimension, M)
-            index = faiss.IndexHNSWFlat(dimension, M)
+            if use_ip:
+                index = faiss.IndexHNSWFlat(dimension, M, faiss.METRIC_INNER_PRODUCT)
+            else:
+                index = faiss.IndexHNSWFlat(dimension, M)
             index.hnsw.efConstruction = ef_construction
         else:
             raise ValueError(f"Unsupported index type: {index_config.index_type}")
@@ -83,7 +91,8 @@ class FAISSClient(BaseVectorDBClient):
         self._id_maps[table_name] = np.array([], dtype=np.int64)
         self._index_configs[table_name] = index_config
         self._dimensions[table_name] = dimension
-        print(f"Created table '{table_name}' with {index_config.index_type} index")
+        self._metrics[table_name] = metric
+        print(f"Created table '{table_name}' with {index_config.index_type} index (metric={metric})")
 
     def drop_table(self, table_name: str) -> None:
         """
@@ -120,6 +129,11 @@ class FAISSClient(BaseVectorDBClient):
 
         # Ensure vectors are float32 and contiguous
         vectors = np.ascontiguousarray(vectors, dtype=np.float32)
+
+        # Normalize for cosine metric (FAISS IP requires unit vectors)
+        metric = self._metrics.get(table_name, "L2")
+        if metric.lower() in ("cosine", "ip", "angular"):
+            faiss.normalize_L2(vectors)
 
         # FAISS uses internal sequential IDs, so we maintain a mapping
         # Append new IDs to our mapping
@@ -163,6 +177,11 @@ class FAISSClient(BaseVectorDBClient):
 
         # Ensure query is float32 and 2D
         query = np.ascontiguousarray(query_vector.reshape(1, -1), dtype=np.float32)
+
+        # Normalize for cosine metric
+        metric = self._metrics.get(table_name, "L2")
+        if metric.lower() in ("cosine", "ip", "angular"):
+            faiss.normalize_L2(query)
 
         start_time = time.perf_counter()
         distances, indices = index.search(query, k)
@@ -222,6 +241,11 @@ class FAISSClient(BaseVectorDBClient):
 
         # Ensure queries are float32 and contiguous 2D array
         queries = np.ascontiguousarray(query_vectors, dtype=np.float32)
+
+        # Normalize for cosine metric
+        metric = self._metrics.get(table_name, "L2")
+        if metric.lower() in ("cosine", "ip", "angular"):
+            faiss.normalize_L2(queries)
 
         start_time = time.perf_counter()
         distances, indices = index.search(queries, k)

@@ -156,7 +156,7 @@ def run_single_benchmark(
     Returns:
         BenchmarkResult with success/failure status
     """
-    from benchmark.data_loader import TexmexDataset
+    from benchmark.data_loader import load_dataset
     from benchmark.docker_manager import DockerManager
     from benchmark.docker_monitor import DockerMonitor
     from benchmark.runner import BenchmarkRunner
@@ -255,12 +255,15 @@ def run_single_benchmark(
         # Run for each dataset
         for dataset_name, dataset_info in datasets_to_run.items():
             dataset_path = Path(dataset_info.get("path", f"data/{dataset_name}"))
+            dataset_format = dataset_info.get("format", "fvecs")
+            dataset_metric = dataset_info.get("metric", "L2")
+
             if not dataset_path.exists():
                 print(f"Warning: Dataset not found: {dataset_path}, skipping")
                 continue
 
             # Load dataset
-            sift_dataset = TexmexDataset(str(dataset_path))
+            sift_dataset = load_dataset(str(dataset_path))
 
             # Setup monitor
             monitor = None
@@ -286,6 +289,7 @@ def run_single_benchmark(
                 results = runner.run_full_benchmark(
                     hnsw_ef_search_values=ef_search_values,
                     indexes_to_run=indexes_to_run,
+                    metric=dataset_metric,
                 )
 
                 if cpus > 0:

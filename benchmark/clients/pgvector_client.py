@@ -38,6 +38,7 @@ class PGVectorClient(BaseVectorDBClient):
         self._connection: Optional[Any] = None
         self._cursor: Optional[Any] = None
         self._index_configs: Dict[str, IndexConfig] = {}
+        self._metrics: Dict[str, str] = {}  # table_name -> "L2" or "cosine"
 
     @property
     def name(self) -> str:
@@ -136,6 +137,13 @@ class PGVectorClient(BaseVectorDBClient):
                 f"vector vector({dimension}))"
             )
 
+            # Determine distance ops
+            metric = index_config.params.get("metric", "L2")
+            if metric.lower() in ("cosine", "angular"):
+                vector_ops = "vector_cosine_ops"
+            else:
+                vector_ops = "vector_l2_ops"
+
             # Create index based on type
             if index_config.index_type == "hnsw":
                 # Explicitly validate and cast to int for SQL safety
@@ -148,15 +156,15 @@ class PGVectorClient(BaseVectorDBClient):
                 if not (1 <= ef_construction <= 2000):
                     raise ValueError(f"HNSW efConstruction must be between 1 and 2000, got {ef_construction}")
 
-                # Create HNSW index with L2 distance
                 self._cursor.execute(
                     f"CREATE INDEX ON {safe_table_name} "
-                    f"USING hnsw (vector vector_l2_ops) "
+                    f"USING hnsw (vector {vector_ops}) "
                     f"WITH (m={m}, ef_construction={ef_construction})"
                 )
             # For "flat" index type, we don't create an index (exact search)
 
             self._index_configs[table_name] = index_config
+            self._metrics[table_name] = metric
             print(f"Created table '{table_name}' with {index_config.index_type} index")
         except Exception as e:
             raise RuntimeError(f"Failed to create table: {e}")
@@ -254,11 +262,17 @@ class PGVectorClient(BaseVectorDBClient):
             # Convert query vector to string format for pgvector
             vector_str = "[" + ",".join(str(x) for x in query_vector.tolist()) + "]"
 
+            # Select distance operator based on metric
+            metric = self._metrics.get(table_name, "L2")
+            if metric.lower() in ("cosine", "angular"):
+                dist_op = "<=>"
+            else:
+                dist_op = "<->"
+
             start_time = time.perf_counter()
 
-            # Use <-> operator for L2 distance (works for both flat and HNSW)
             self._cursor.execute(
-                f"SELECT id, vector <-> %s::vector AS distance "
+                f"SELECT id, vector {dist_op} %s::vector AS distance "
                 f"FROM {safe_table_name} "
                 f"ORDER BY distance "
                 f"LIMIT %s",

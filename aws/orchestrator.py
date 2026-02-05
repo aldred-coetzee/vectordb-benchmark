@@ -34,7 +34,7 @@ DATABASES = [
     "qdrant", "milvus", "weaviate", "chroma",
     "redis", "pgvector", "kdbai", "faiss", "lancedb"
 ]
-DATASETS = ["sift", "gist"]
+DATASETS = ["sift", "gist", "glove-100", "dbpedia-openai"]
 
 # Databases that don't need Docker (embedded)
 EMBEDDED_DBS = ["faiss", "lancedb"]

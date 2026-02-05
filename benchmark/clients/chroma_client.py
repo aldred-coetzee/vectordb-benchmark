@@ -94,11 +94,15 @@ class ChromaClient(BaseVectorDBClient):
         except Exception:
             pass  # Collection doesn't exist
 
+        # Determine distance space
+        metric = index_config.params.get("metric", "L2")
+        space = "cosine" if metric.lower() in ("cosine", "angular") else "l2"
+
         # Build HNSW metadata
         if index_config.index_type == "flat":
             # Chroma doesn't have true flat index, use HNSW with high search_ef
             metadata = {
-                "hnsw:space": "l2",
+                "hnsw:space": space,
                 "hnsw:search_ef": 256,
                 "hnsw:construction_ef": 128,
                 "hnsw:M": 64,
@@ -107,7 +111,7 @@ class ChromaClient(BaseVectorDBClient):
             M = index_config.params.get("M", 16)
             ef_construction = index_config.params.get("efConstruction", 64)
             metadata = {
-                "hnsw:space": "l2",
+                "hnsw:space": space,
                 "hnsw:construction_ef": ef_construction,
                 "hnsw:M": M,
                 "hnsw:search_ef": 64,  # Default, will be updated at search time

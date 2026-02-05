@@ -10,13 +10,45 @@ datasets:
     path: data/sift
     vectors: 1000000
     dimensions: 128
-    description: "SIFT-1M: 1M image descriptors, 128D. Baseline benchmark — moderate dimensionality, well-studied."
+    metric: L2
+    format: fvecs
+    name: "SIFT-1M"
+    source: "ftp://ftp.irisa.fr/local/texmex/corpus/sift.tar.gz"
+    purpose: "Baseline — the standard ANN benchmark. Low dimension (128D), L2 distance. Allows direct comparison with published results from other benchmarking tools."
+    description: "1M SIFT image descriptors extracted from the Flickr dataset. 128-dimensional local feature vectors widely used as the canonical vector search benchmark since 2008."
 
   gist:
     path: data/gist
     vectors: 1000000
     dimensions: 960
-    description: "GIST-1M: 1M image descriptors, 960D. High-dimension stress test — exposes payload limits and curse of dimensionality."
+    metric: L2
+    format: fvecs
+    name: "GIST-1M"
+    source: "ftp://ftp.irisa.fr/local/texmex/corpus/gist.tar.gz"
+    purpose: "Dimension stress — 960D vectors test memory bandwidth, cache pressure, and curse-of-dimensionality effects. Exposes database payload limits."
+    description: "1M GIST global image descriptors. 960-dimensional vectors — 7.5x larger than SIFT — that stress high-dimensional indexing."
+
+  glove-100:
+    path: data/glove-100/glove-100-angular.hdf5
+    vectors: 1183514
+    dimensions: 100
+    metric: cosine
+    format: hdf5
+    name: "GloVe-100"
+    source: "http://ann-benchmarks.com/glove-100-angular.hdf5"
+    purpose: "Cosine metric — most production vector search workloads use cosine or inner-product distance, not L2. Tests native angular distance support and whether databases incur overhead converting between metrics."
+    description: "1.18M GloVe word embedding vectors (100D) trained on Wikipedia + Gigaword. Angular (cosine) distance. The standard dataset for testing non-L2 metrics in ANN benchmarks."
+
+  dbpedia-openai:
+    path: data/dbpedia-openai/dbpedia-openai-1000k-angular.hdf5
+    vectors: 1000000
+    dimensions: 1536
+    metric: cosine
+    format: hdf5
+    name: "DBpedia-OpenAI-1M"
+    source: "https://storage.googleapis.com/ann-datasets/ann-benchmarks/dbpedia-openai-1000k-angular.hdf5"
+    purpose: "Production-representative — 1536D OpenAI text-embedding-ada-002 vectors match the dimensionality of the most widely deployed embedding model. Tests real-world RAG/search workload performance at high dimensionality with cosine distance."
+    description: "1M DBpedia entity embeddings generated with OpenAI text-embedding-ada-002 (1536D). Angular (cosine) distance. Represents production RAG and semantic search workloads."
 
   # Dev datasets — small subsets for fast iteration (NOT for benchmarking)
   # Generate with: python scripts/generate_dev_datasets.py
@@ -24,12 +56,18 @@ datasets:
     path: data/sift-dev
     vectors: 10000
     dimensions: 128
+    metric: L2
+    format: fvecs
+    name: "SIFT-dev"
     description: "Dev subset of SIFT-1M (10K vectors, 100 queries). For code testing only."
 
   gist-dev:
     path: data/gist-dev
     vectors: 10000
     dimensions: 960
+    metric: L2
+    format: fvecs
+    name: "GIST-dev"
     description: "Dev subset of GIST-1M (10K vectors, 100 queries). For code testing only."
 
 # =============================================================================

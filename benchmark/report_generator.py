@@ -344,6 +344,50 @@ class ReportGenerator:
                 lines.append(f"- **Host**: {sample.hostname}")
             lines.append("")
 
+            # Datasets section — show metadata for datasets present in results
+            result_datasets = set(r.dataset for r in runs)
+            ds_entries = []
+            for ds_key, ds_meta in datasets.items():
+                if not isinstance(ds_meta, dict):
+                    continue
+                # Match by key or by uppercase name
+                if ds_key in result_datasets or ds_key.upper() in result_datasets:
+                    ds_entries.append(ds_meta)
+            # Also try case-insensitive match
+            if not ds_entries:
+                for ds_key, ds_meta in datasets.items():
+                    if not isinstance(ds_meta, dict):
+                        continue
+                    if ds_key.lower() in {d.lower() for d in result_datasets}:
+                        ds_entries.append(ds_meta)
+
+            if ds_entries:
+                lines.append("### Datasets")
+                lines.append("")
+                lines.append("| Dataset | Vectors | Dims | Metric | Purpose |")
+                lines.append("|---------|---------|------|--------|---------|")
+                for ds_meta in ds_entries:
+                    ds_name = ds_meta.get("name", "")
+                    ds_vectors = f"{ds_meta.get('vectors', 0):,}" if ds_meta.get("vectors") else "-"
+                    ds_dims = ds_meta.get("dimensions", "-")
+                    ds_metric = ds_meta.get("metric", "L2")
+                    # Truncate purpose to first sentence for table
+                    purpose = ds_meta.get("purpose", "")
+                    purpose_short = purpose.split(".")[0] + "." if purpose else "-"
+                    lines.append(f"| {ds_name} | {ds_vectors} | {ds_dims} | {ds_metric} | {purpose_short} |")
+                lines.append("")
+
+                # Full descriptions
+                for ds_meta in ds_entries:
+                    ds_name = ds_meta.get("name", "")
+                    ds_desc_full = ds_meta.get("description", "")
+                    ds_purpose = ds_meta.get("purpose", "")
+                    if ds_desc_full:
+                        lines.append(f"**{ds_name}**: {ds_desc_full}")
+                        if ds_purpose:
+                            lines.append(f"*{ds_purpose}*")
+                        lines.append("")
+
             # Index descriptions from config
             indexes = bench_config.get("indexes", {})
             if indexes:

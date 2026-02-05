@@ -34,6 +34,7 @@ class MilvusClient(BaseVectorDBClient):
         self._connection_alias = "default"
         self._index_configs: Dict[str, IndexConfig] = {}
         self._loaded_collections: set = set()  # Track loaded collections
+        self._metrics: Dict[str, str] = {}  # table_name -> milvus metric type
 
     @property
     def name(self) -> str:
@@ -76,6 +77,7 @@ class MilvusClient(BaseVectorDBClient):
         """Disconnect from Milvus."""
         self._index_configs.clear()
         self._loaded_collections.clear()
+        self._metrics.clear()
         try:
             connections.disconnect(self._connection_alias)
         except Exception:
@@ -111,10 +113,17 @@ class MilvusClient(BaseVectorDBClient):
             # Create collection
             collection = Collection(name=table_name, schema=schema)
 
+            # Determine metric type
+            metric = index_config.params.get("metric", "L2")
+            if metric.lower() in ("cosine", "angular"):
+                milvus_metric = "COSINE"
+            else:
+                milvus_metric = "L2"
+
             # Build index configuration based on index type
             if index_config.index_type == "flat":
                 index_params = {
-                    "metric_type": "L2",
+                    "metric_type": milvus_metric,
                     "index_type": "FLAT",
                     "params": {},
                 }
@@ -122,7 +131,7 @@ class MilvusClient(BaseVectorDBClient):
                 m = index_config.params.get("M", 16)
                 ef_construct = index_config.params.get("efConstruction", 64)
                 index_params = {
-                    "metric_type": "L2",
+                    "metric_type": milvus_metric,
                     "index_type": "HNSW",
                     "params": {
                         "M": m,
@@ -136,7 +145,8 @@ class MilvusClient(BaseVectorDBClient):
             collection.create_index(field_name="vector", index_params=index_params)
 
             self._index_configs[table_name] = index_config
-            print(f"Created collection '{table_name}' with {index_config.index_type} index")
+            self._metrics[table_name] = milvus_metric
+            print(f"Created collection '{table_name}' with {index_config.index_type} index (metric={milvus_metric})")
         except Exception as e:
             raise RuntimeError(f"Failed to create collection: {e}")
 
@@ -220,15 +230,16 @@ class MilvusClient(BaseVectorDBClient):
                 self._loaded_collections.add(table_name)
 
             # Build search parameters
+            milvus_metric = self._metrics.get(table_name, "L2")
             if search_config.index_type == "flat":
                 search_params = {
-                    "metric_type": "L2",
+                    "metric_type": milvus_metric,
                     "params": {},
                 }
             else:
                 ef_search = search_config.params.get("efSearch", 64)
                 search_params = {
-                    "metric_type": "L2",
+                    "metric_type": milvus_metric,
                     "params": {"ef": ef_search},
                 }
 
@@ -286,11 +297,12 @@ class MilvusClient(BaseVectorDBClient):
                 self._loaded_collections.add(table_name)
 
             # Build search parameters
+            milvus_metric = self._metrics.get(table_name, "L2")
             if search_config.index_type == "flat":
-                search_params = {"metric_type": "L2", "params": {}}
+                search_params = {"metric_type": milvus_metric, "params": {}}
             else:
                 ef_search = search_config.params.get("efSearch", 64)
-                search_params = {"metric_type": "L2", "params": {"ef": ef_search}}
+                search_params = {"metric_type": milvus_metric, "params": {"ef": ef_search}}
 
             # Sub-batch to stay under 64MB gRPC limit
             dims = query_vectors.shape[1]

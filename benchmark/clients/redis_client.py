@@ -93,6 +93,10 @@ class RedisClient(BaseVectorDBClient):
         except Exception:
             pass  # Index doesn't exist
 
+        # Determine distance metric
+        metric = index_config.params.get("metric", "L2")
+        redis_metric = "COSINE" if metric.lower() in ("cosine", "angular") else "L2"
+
         # Build vector field configuration
         if index_config.index_type == "flat":
             vector_field = VectorField(
@@ -101,7 +105,7 @@ class RedisClient(BaseVectorDBClient):
                 {
                     "TYPE": "FLOAT32",
                     "DIM": dimension,
-                    "DISTANCE_METRIC": "L2",
+                    "DISTANCE_METRIC": redis_metric,
                 },
             )
         elif index_config.index_type == "hnsw":
@@ -113,7 +117,7 @@ class RedisClient(BaseVectorDBClient):
                 {
                     "TYPE": "FLOAT32",
                     "DIM": dimension,
-                    "DISTANCE_METRIC": "L2",
+                    "DISTANCE_METRIC": redis_metric,
                     "M": M,
                     "EF_CONSTRUCTION": ef_construction,
                     "EF_RUNTIME": 64,  # Default, will be overridden at search time

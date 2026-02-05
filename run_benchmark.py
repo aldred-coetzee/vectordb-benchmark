@@ -184,7 +184,7 @@ def run_with_config(
     """
     import time
     from datetime import datetime
-    from benchmark.data_loader import TexmexDataset
+    from benchmark.data_loader import load_dataset
     from benchmark.docker_monitor import DockerMonitor
     from benchmark.docker_manager import DockerManager
     from benchmark.runner import BenchmarkRunner
@@ -309,28 +309,35 @@ def run_with_config(
         # Run benchmarks for each dataset
         for dataset_name, dataset_info in datasets_to_run.items():
             dataset_path = Path(dataset_info.get("path", f"data/{dataset_name}"))
+            dataset_format = dataset_info.get("format", "fvecs")
+            dataset_metric = dataset_info.get("metric", "L2")
 
             # Validate dataset exists
-            if not dataset_path.exists():
-                print(f"Warning: Dataset path not found: {dataset_path}, skipping")
-                continue
-
-            # Check for required files (named after the dataset directory)
-            ds_name = dataset_path.name
-            required_files = [f"{ds_name}_base.fvecs", f"{ds_name}_query.fvecs", f"{ds_name}_groundtruth.ivecs"]
-            missing_files = [f for f in required_files if not (dataset_path / f).exists()]
-            if missing_files:
-                print(f"Warning: Missing files in {dataset_path}: {missing_files}, skipping")
-                continue
+            if dataset_format == "hdf5":
+                # HDF5: path is a file
+                if not dataset_path.exists():
+                    print(f"Warning: HDF5 file not found: {dataset_path}, skipping")
+                    continue
+            else:
+                # fvecs: path is a directory
+                if not dataset_path.exists():
+                    print(f"Warning: Dataset path not found: {dataset_path}, skipping")
+                    continue
+                ds_name = dataset_path.name
+                required_files = [f"{ds_name}_base.fvecs", f"{ds_name}_query.fvecs", f"{ds_name}_groundtruth.ivecs"]
+                missing_files = [f for f in required_files if not (dataset_path / f).exists()]
+                if missing_files:
+                    print(f"Warning: Missing files in {dataset_path}: {missing_files}, skipping")
+                    continue
 
             print(f"\n{'='*80}")
-            print(f"BENCHMARKING: {database_name} with {dataset_name} dataset")
+            print(f"BENCHMARKING: {database_name} with {dataset_name} dataset (metric={dataset_metric})")
             print(f"{'='*80}")
 
             # Load dataset
             print("\nLoading dataset...")
             try:
-                dataset = TexmexDataset(str(dataset_path))
+                dataset = load_dataset(str(dataset_path))
                 dataset.load_base_vectors()  # Explicitly trigger lazy loading
                 print(f"Dataset: {dataset.num_base_vectors:,} vectors, {dataset.dimensions} dimensions")
             except Exception as e:
@@ -372,6 +379,7 @@ def run_with_config(
                 results = runner.run_full_benchmark(
                     hnsw_ef_search_values=ef_search_values,
                     indexes_to_run=indexes_to_run,
+                    metric=dataset_metric,
                 )
 
                 # Override Docker limits with config values if provided
