@@ -132,7 +132,7 @@ Format: `.hdf5` — keys: `train` (base vectors), `test` (queries), `neighbors` 
 | Dataset | Vectors | Dims | Queries | Metric | Size | Purpose |
 |---------|---------|------|---------|--------|------|---------|
 | **GloVe-100** | 1.18M | 100 | 10K | Cosine | ~463MB | Cosine metric |
-| **DBpedia-OpenAI-1M** | 1M | 1536 | 10K | Cosine | ~6GB | Production-representative (ada-002) |
+| **DBpedia-OpenAI-1M** | 990K | 1536 | 10K | Cosine | ~6GB | Production-representative (ada-002) |
 
 Download: `python scripts/download_datasets.py --datasets glove-100,dbpedia-openai`
 

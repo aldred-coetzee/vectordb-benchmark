@@ -41,14 +41,14 @@ datasets:
 
   dbpedia-openai:
     path: data/dbpedia-openai/dbpedia-openai-1000k-angular.hdf5
-    vectors: 1000000
+    vectors: 990000
     dimensions: 1536
     metric: cosine
     format: hdf5
     name: "DBpedia-OpenAI-1M"
     source: "https://storage.googleapis.com/ann-datasets/ann-benchmarks/dbpedia-openai-1000k-angular.hdf5"
     purpose: "Production-representative — 1536D OpenAI text-embedding-ada-002 vectors match the dimensionality of the most widely deployed embedding model. Tests real-world RAG/search workload performance at high dimensionality with cosine distance."
-    description: "1M DBpedia entity embeddings generated with OpenAI text-embedding-ada-002 (1536D). Angular (cosine) distance. Represents production RAG and semantic search workloads."
+    description: "990K DBpedia entity embeddings generated with OpenAI text-embedding-ada-002 (1536D). Angular (cosine) distance. Represents production RAG and semantic search workloads."
 
   # Dev datasets — small subsets for fast iteration (NOT for benchmarking)
   # Generate with: python scripts/generate_dev_datasets.py
