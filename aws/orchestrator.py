@@ -8,6 +8,8 @@ Launches worker EC2 instances, monitors progress, and aggregates results.
 import argparse
 import base64
 import json
+import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -182,6 +184,53 @@ def wait_for_completion(
     return results
 
 
+def generate_and_upload_report(
+    s3_client,
+    run_id: str,
+    num_completed: int,
+) -> bool:
+    """Download per-job results, merge, generate report, and upload to S3.
+
+    Uses scripts/pull_run.py to download and merge per-job databases,
+    then uploads the merged DB and HTML report back to S3.
+    """
+    if num_completed == 0:
+        print("\nNo completed jobs — skipping report generation.")
+        return False
+
+    print(f"\n{'=' * 60}")
+    print("GENERATING REPORT")
+    print(f"{'=' * 60}")
+
+    # pull_run.py handles: S3 download → merge → report generation
+    result = subprocess.run(
+        [sys.executable, "scripts/pull_run.py", run_id, "--output-dir", "results"],
+    )
+
+    if result.returncode != 0:
+        print("ERROR: Report generation failed")
+        return False
+
+    # Upload report and merged DB to S3
+    uploads = [
+        (f"results/report-{run_id}.html", f"runs/{run_id}/report.html", "text/html"),
+        (f"results/benchmark-{run_id}.db", f"runs/{run_id}/benchmark.db", "application/octet-stream"),
+    ]
+
+    for local_path, s3_key, content_type in uploads:
+        if Path(local_path).exists():
+            print(f"  Uploading {local_path} → s3://{S3_BUCKET}/{s3_key}")
+            s3_client.upload_file(
+                local_path, S3_BUCKET, s3_key,
+                ExtraArgs={"ContentType": content_type},
+            )
+        else:
+            print(f"  WARNING: {local_path} not found, skipping upload")
+
+    print(f"\nReport: s3://{S3_BUCKET}/runs/{run_id}/report.html")
+    return True
+
+
 def generate_run_id() -> str:
     """Generate a unique run ID based on timestamp."""
     return datetime.now().strftime("%Y-%m-%d-%H%M")
@@ -343,6 +392,10 @@ def main():
         print("\nFailed jobs:")
         for db, ds in failed:
             print(f"  - {db}/{ds}")
+
+    # Generate merged report and upload to S3
+    if completed:
+        generate_and_upload_report(s3_client, run_id, len(completed))
 
     print(f"\nResults: s3://{S3_BUCKET}/runs/{run_id}/")
 

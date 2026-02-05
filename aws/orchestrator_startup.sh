@@ -95,6 +95,11 @@ cd /app/vectordb-benchmark
 # Create symlink so relative paths work (datasets at /data on worker AMI)
 ln -sf /data /app/vectordb-benchmark/data 2>/dev/null || true
 
+# Install Python packages needed for report generation
+# (report_generator → config (yaml) → db → runner (numpy) → docker_monitor (docker))
+echo "Installing report generation dependencies..."
+pip3.12 install pyyaml numpy docker 2>&1 | tail -1
+
 # =============================================================================
 # Run orchestrator
 # =============================================================================
