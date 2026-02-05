@@ -1028,6 +1028,9 @@ class ComparisonReportGenerator:
     # Databases excluded from ranking (not comparable to client-server disk-persisted)
     EXCLUDED_DBS = {"FAISS", "Redis"}
 
+    # Highlighted database (visual emphasis)
+    HIGHLIGHT_DB = "KDB.AI"
+
     def __init__(self, db_path: str = "results/benchmark.db", configs_dir: str = "configs"):
         self._rg = ReportGenerator(db_path=db_path, configs_dir=configs_dir)
 
@@ -1200,7 +1203,8 @@ class ComparisonReportGenerator:
                 notes_parts.append("in-memory")
             notes_label = ", ".join(notes_parts)
             excluded = db_name in self.EXCLUDED_DBS
-            row_class = ' class="row-excluded"' if excluded else ""
+            highlighted = db_name == self.HIGHLIGHT_DB
+            row_class = ' class="row-excluded"' if excluded else (' class="row-highlight"' if highlighted else "")
             row = f"<tr{row_class}><td><strong>{db_name}</strong></td><td>{notes_label}</td>"
 
             for ds in datasets:
@@ -1604,7 +1608,12 @@ class ComparisonReportGenerator:
 
         rows_html: List[str] = []
         for db, idx, config, qps, r10, r100, p50, p95, p99 in rows_data:
-            row_class = ' class="row-excluded"' if db in self.EXCLUDED_DBS else ""
+            if db in self.EXCLUDED_DBS:
+                row_class = ' class="row-excluded"'
+            elif db == self.HIGHLIGHT_DB:
+                row_class = ' class="row-highlight"'
+            else:
+                row_class = ""
             if batch:
                 rows_html.append(
                     f"<tr{row_class}><td>{db}</td><td>{idx}</td>"
@@ -1646,7 +1655,12 @@ class ComparisonReportGenerator:
 
         rows: List[str] = []
         for run in sorted(runs, key=_best_hnsw_qps, reverse=True):
-            row_class = ' class="row-excluded"' if run.database in self.EXCLUDED_DBS else ""
+            if run.database in self.EXCLUDED_DBS:
+                row_class = ' class="row-excluded"'
+            elif run.database == self.HIGHLIGHT_DB:
+                row_class = ' class="row-highlight"'
+            else:
+                row_class = ""
             row = f"<tr{row_class}><td>{run.database}</td>"
             for ef in ef_values:
                 result = next(
@@ -1852,6 +1866,9 @@ class ComparisonReportGenerator:
 
         /* Excluded rows (FAISS/Redis — not comparable) */
         .row-excluded td {{ background: #fef9c3 !important; }}
+
+        /* Highlighted rows (KDB.AI) */
+        .row-highlight td {{ background: #dbeafe !important; font-weight: 600; }}
 
         /* Caveat callout box */
         .caveat-box {{
