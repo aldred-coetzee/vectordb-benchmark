@@ -1102,17 +1102,30 @@ class ComparisonReportGenerator:
     ) -> str:
         lines: List[str] = []
         lines.append("<h2>Executive Summary</h2>")
-        lines.append(f'<p class="note">All search metrics at HNSW efSearch={self.REFERENCE_EF} (common operating point). '
-                      f'Sorted by average QPS across datasets.</p>')
+        lines.append(f'<p class="note">All search metrics at HNSW efSearch={self.REFERENCE_EF}. '
+                      f'Sorted by average QPS across datasets (descending). '
+                      f'<span class="rank-top-inline">Green</span> = top 2 client-server, '
+                      f'<span class="rank-bottom-inline">red</span> = bottom 2.</p>')
+
+        # Caveats callout
+        lines.append('<div class="caveat-box">'
+                     '<strong>Comparability notes:</strong>'
+                     '<ul>'
+                     '<li><strong>FAISS</strong> runs embedded (in-process) with zero network overhead '
+                     '&mdash; not directly comparable to client-server databases. Shown as a baseline.</li>'
+                     '<li><strong>Redis</strong> is purely in-memory (no disk persistence during operation) '
+                     '&mdash; other client-server databases persist to disk. '
+                     'Redis numbers reflect RAM-only performance.</li>'
+                     '</ul></div>')
 
         # Collect all unique databases
         all_dbs = sorted(set(r.database for ds_runs in by_dataset.values() for r in ds_runs))
 
-        # Build header row
-        header = "<tr><th>Database</th><th>Type</th>"
+        # Build header row with sort indicator
+        header = "<tr><th>Database</th><th>Notes</th>"
         for ds in datasets:
             header += f"<th>{ds} QPS</th><th>{ds} R@10</th>"
-        header += "<th>Avg QPS</th>"
+        header += "<th>Avg QPS ▼</th>"
         # Add ingest columns
         for ds in datasets:
             header += f"<th>{ds} Ingest (v/s)</th>"
@@ -1172,8 +1185,16 @@ class ComparisonReportGenerator:
         # Build rows
         rows_html: List[str] = []
         for db_name, arch, search_by_ds, ingest_by_ds, avg_qps in db_rows:
-            arch_label = "embedded" if arch == "embedded" else ""
-            row = f"<tr><td><strong>{db_name}</strong></td><td>{arch_label}</td>"
+            # Build annotation notes
+            notes_parts: List[str] = []
+            sample_run = next((r for ds_runs in by_dataset.values() for r in ds_runs if r.database == db_name), None)
+            persistence = sample_run.metadata.get("persistence", "") if sample_run else ""
+            if arch == "embedded":
+                notes_parts.append("embedded")
+            if persistence == "memory" and arch != "embedded":
+                notes_parts.append("in-memory")
+            notes_label = ", ".join(notes_parts)
+            row = f"<tr><td><strong>{db_name}</strong></td><td>{notes_label}</td>"
 
             for ds in datasets:
                 s = search_by_ds.get(ds)
@@ -1544,17 +1565,16 @@ class ComparisonReportGenerator:
         return "\n".join(lines)
 
     def _search_table(self, runs: List[RunData], batch: bool = False) -> str:
-        """Render search results table for a single dataset."""
-        suffix = "_BATCH" if batch else ""
-        rows: List[str] = []
+        """Render search results table for a single dataset, sorted by QPS descending."""
+        rows_data: List[Tuple[str, str, str, float, str, str, str, str, str]] = []
 
         if batch:
-            header = "<tr><th>Database</th><th>Index</th><th>Config</th><th>QPS</th><th>R@10</th><th>R@100</th></tr>"
+            header = "<tr><th>Database</th><th>Index</th><th>Config</th><th>QPS ▼</th><th>R@10</th><th>R@100</th></tr>"
         else:
-            header = "<tr><th>Database</th><th>Index</th><th>Config</th><th>QPS</th><th>R@10</th><th>R@100</th><th>P50 (ms)</th><th>P95 (ms)</th><th>P99 (ms)</th></tr>"
+            header = "<tr><th>Database</th><th>Index</th><th>Config</th><th>QPS ▼</th><th>R@10</th><th>R@100</th><th>P50 (ms)</th><th>P95 (ms)</th><th>P99 (ms)</th></tr>"
 
-        for run in sorted(runs, key=lambda r: r.database):
-            for s in sorted(run.search_results, key=lambda x: (x.index_type, x.ef_search or 0)):
+        for run in runs:
+            for s in run.search_results:
                 if batch:
                     if not s.index_type.upper().endswith("_BATCH"):
                         continue
@@ -1565,30 +1585,36 @@ class ComparisonReportGenerator:
                 config = f"ef={s.ef_search}" if s.ef_search else "-"
                 r10 = f"{s.recall_at_10:.4f}" if s.recall_at_10 else "-"
                 r100 = f"{s.recall_at_100:.4f}" if s.recall_at_100 else "-"
-
                 idx_display = s.index_type.upper().replace("_BATCH", "")
+                p50 = f"{s.p50_ms:.2f}" if s.p50_ms else "-"
+                p95 = f"{s.p95_ms:.2f}" if s.p95_ms else "-"
+                p99 = f"{s.p99_ms:.2f}" if s.p99_ms else "-"
 
-                if batch:
-                    rows.append(
-                        f"<tr><td>{run.database}</td><td>{idx_display}</td>"
-                        f"<td>{config}</td><td>{s.qps:,.0f}</td>"
-                        f"<td>{r10}</td><td>{r100}</td></tr>"
-                    )
-                else:
-                    p50 = f"{s.p50_ms:.2f}" if s.p50_ms else "-"
-                    p95 = f"{s.p95_ms:.2f}" if s.p95_ms else "-"
-                    p99 = f"{s.p99_ms:.2f}" if s.p99_ms else "-"
-                    rows.append(
-                        f"<tr><td>{run.database}</td><td>{idx_display}</td>"
-                        f"<td>{config}</td><td>{s.qps:,.0f}</td>"
-                        f"<td>{r10}</td><td>{r100}</td>"
-                        f"<td>{p50}</td><td>{p95}</td><td>{p99}</td></tr>"
-                    )
+                rows_data.append((run.database, idx_display, config, s.qps, r10, r100, p50, p95, p99))
 
-        return f'<div class="table-wrap"><table><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table></div>'
+        # Sort by QPS descending
+        rows_data.sort(key=lambda x: x[3], reverse=True)
+
+        rows_html: List[str] = []
+        for db, idx, config, qps, r10, r100, p50, p95, p99 in rows_data:
+            if batch:
+                rows_html.append(
+                    f"<tr><td>{db}</td><td>{idx}</td>"
+                    f"<td>{config}</td><td>{qps:,.0f}</td>"
+                    f"<td>{r10}</td><td>{r100}</td></tr>"
+                )
+            else:
+                rows_html.append(
+                    f"<tr><td>{db}</td><td>{idx}</td>"
+                    f"<td>{config}</td><td>{qps:,.0f}</td>"
+                    f"<td>{r10}</td><td>{r100}</td>"
+                    f"<td>{p50}</td><td>{p95}</td><td>{p99}</td></tr>"
+                )
+
+        return f'<div class="table-wrap"><table><thead>{header}</thead><tbody>{"".join(rows_html)}</tbody></table></div>'
 
     def _qps_recall_table(self, runs: List[RunData]) -> str:
-        """Render QPS vs Recall tradeoff table (HNSW only)."""
+        """Render QPS vs Recall tradeoff table (HNSW only), sorted by best QPS descending."""
         # Collect all ef values
         all_ef: set = set()
         for r in runs:
@@ -1600,13 +1626,17 @@ class ComparisonReportGenerator:
         if not ef_values:
             return ""
 
-        header = "<tr><th>Database</th>"
+        header = "<tr><th>Database ▼</th>"
         for ef in ef_values:
             header += f"<th>ef={ef} QPS</th><th>ef={ef} R@10</th>"
         header += "</tr>"
 
+        # Sort runs by best HNSW QPS descending
+        def _best_hnsw_qps(run: RunData) -> float:
+            return max((s.qps for s in run.search_results if s.index_type.lower() == "hnsw"), default=0)
+
         rows: List[str] = []
-        for run in sorted(runs, key=lambda r: r.database):
+        for run in sorted(runs, key=_best_hnsw_qps, reverse=True):
             row = f"<tr><td>{run.database}</td>"
             for ef in ef_values:
                 result = next(
@@ -1684,15 +1714,17 @@ class ComparisonReportGenerator:
         # Database Configuration Summary
         lines.append("<h3>Database Configuration</h3>")
         db_rows = ""
-        for run in sorted(set(r.database for r in runs)):
-            # Find a run for this database
-            sample = next(r for r in runs if r.database == run)
+        for db_name in sorted(set(r.database for r in runs)):
+            sample = next(r for r in runs if r.database == db_name)
             meta = sample.metadata
+            persistence = meta.get("persistence", "N/A")
+            persistence_html = (f'<strong class="caveat-highlight">{persistence}</strong>'
+                                if persistence == "memory" else persistence)
             db_rows += (
                 f"<tr><td>{sample.database}</td><td>{sample.db_version or 'N/A'}</td>"
                 f"<td>{meta.get('architecture', 'N/A')}</td>"
                 f"<td>{meta.get('protocol', 'N/A')}</td>"
-                f"<td>{meta.get('persistence', 'N/A')}</td>"
+                f"<td>{persistence_html}</td>"
                 f"<td>{meta.get('license', 'N/A')}</td></tr>"
             )
 
@@ -1725,7 +1757,8 @@ class ComparisonReportGenerator:
             <li>Search tests used 10,000 queries with 100 warmup queries, executed sequentially (single-client, one-at-a-time)</li>
             <li>Recall is calculated against brute-force ground truth provided with each dataset</li>
             <li>Client-server databases run in Docker containers with consistent CPU/memory limits</li>
-            <li>FAISS runs in-process (no network overhead) — shown as embedded baseline</li>
+            <li>FAISS runs in-process (no network overhead) &mdash; shown as embedded baseline, not directly comparable to client-server databases</li>
+            <li>Redis operates entirely in-memory (no disk persistence during benchmarks) &mdash; other client-server databases persist to disk, making Redis results not directly comparable</li>
         </ul>"""
 
     # -----------------------------------------------------------------
@@ -1803,6 +1836,25 @@ class ComparisonReportGenerator:
         /* Rank badges */
         .rank-top {{ background: #dcfce7 !important; }}
         .rank-bottom {{ background: #fee2e2 !important; }}
+        .rank-top-inline {{ background: #dcfce7; padding: 1px 5px; border-radius: 3px; }}
+        .rank-bottom-inline {{ background: #fee2e2; padding: 1px 5px; border-radius: 3px; }}
+
+        /* Caveat callout box */
+        .caveat-box {{
+            background: #fffbeb;
+            border: 1px solid #f59e0b;
+            border-left: 4px solid #f59e0b;
+            border-radius: 4px;
+            padding: 0.75rem 1rem;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }}
+        .caveat-box ul {{
+            margin: 0.25rem 0 0 0;
+            padding-left: 1.25rem;
+        }}
+        .caveat-box li {{ margin: 0.25rem 0; }}
+        .caveat-highlight {{ color: #d97706; }}
 
         /* Chart grid */
         .chart-grid {{
