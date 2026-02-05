@@ -1013,10 +1013,9 @@ def _fig_to_svg(fig) -> str:
     import matplotlib.pyplot as plt
     plt.close(fig)
     svg = buf.getvalue()
-    # Strip XML declaration and DOCTYPE for inline embedding
-    lines = svg.split("\n")
-    filtered = [l for l in lines if not l.startswith("<?xml") and not l.startswith("<!DOCTYPE")]
-    return "\n".join(filtered)
+    # Strip everything before <svg for inline embedding
+    idx = svg.find("<svg")
+    return svg[idx:] if idx >= 0 else svg
 
 
 class ComparisonReportGenerator:
