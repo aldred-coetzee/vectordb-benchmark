@@ -6,8 +6,8 @@ database:
 
 container:
   image: semitechnologies/weaviate:latest
-  cpus: 8
-  memory: 32g
+  cpus: 16
+  memory: 64g
   ports:
     - "8080:8080"
     - "50051:50051"

@@ -6,8 +6,8 @@ database:
 
 container:
   image: chromadb/chroma:latest
-  cpus: 8
-  memory: 32g
+  cpus: 16
+  memory: 64g
   ports:
     - "8000:8000"
   volumes:

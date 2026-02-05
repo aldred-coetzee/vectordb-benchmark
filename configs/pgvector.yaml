@@ -6,8 +6,8 @@ database:
 
 container:
   image: pgvector/pgvector:pg16
-  cpus: 8
-  memory: 32g
+  cpus: 16
+  memory: 64g
   ports:
     - "5432:5432"
   env:

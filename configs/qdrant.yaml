@@ -6,8 +6,8 @@ database:
 
 container:
   image: qdrant/qdrant:latest
-  cpus: 8
-  memory: 32g
+  cpus: 16
+  memory: 64g
   ports:
     - "6333:6333"
     - "6334:6334"

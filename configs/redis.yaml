@@ -6,8 +6,8 @@ database:
 
 container:
   image: redis/redis-stack-server:latest
-  cpus: 8
-  memory: 32g
+  cpus: 16
+  memory: 64g
   ports:
     - "6379:6379"
   # No volume mount — benchmarks start fresh each run
