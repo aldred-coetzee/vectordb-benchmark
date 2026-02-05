@@ -433,8 +433,8 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [x] Create Launch Template (`vectordb-benchmark-full`) for full benchmark runs
 - [x] Add `iam:PassRole` permission to IAM role (managed policy: `vectordb-benchmark-passrole`)
 - [x] Build Orchestrator AMI: `ami-09ed5dd071675cfef` (`vectordb-benchmark-orchestrator-v1`)
-- [ ] Update Launch Template to use Orchestrator AMI
-- [ ] Add Name tags to worker instances in `orchestrator.py` (currently workers have no Name tag)
+- [x] Update Launch Template to use Orchestrator AMI (version 7)
+- [x] Add Name/Owner/Project tags to worker instances in `orchestrator.py`
 - [ ] Run full benchmark suite (all 9 DBs on SIFT-1M and GIST-1M)
 - [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
 - [ ] Add GloVe-100 support (HDF5 format - needs h5py)
@@ -462,10 +462,11 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 #### Method 1: Launch Template (Full Run)
 
-One Launch Template: `vectordb-benchmark-full` (needs update after orchestrator AMI created)
+One Launch Template: `vectordb-benchmark-full` (version 7)
 - Instance type: t3.small (orchestrator)
 - AMI: `ami-09ed5dd071675cfef` (Orchestrator AMI)
 - IAM profile: vectordb-benchmark-role
+- Instance tags: Name=`vectordb-orchestrator`, Owner=`acoetzee`, Project=`vectordb-benchmark`
 - User-data: fetches and runs `aws/orchestrator_startup.sh` from GitHub
 - Runs all 9 databases on sift + gist datasets
 - Fire and forget - just launch and check S3 later
@@ -518,8 +519,8 @@ python aws/orchestrator.py
 3. ~~**Create Launch Template**~~ ✓ — `vectordb-benchmark-full` (version 6)
 4. ~~**Add IAM PassRole Permission**~~ ✓ — Managed policy `vectordb-benchmark-passrole` attached
 5. ~~**Build Orchestrator AMI**~~ ✓ — `ami-09ed5dd071675cfef` (Python 3.12, boto3, git, ~3GB)
-6. **Update Launch Template** — Point to new Orchestrator AMI instead of Worker AMI
-7. **Fix Worker Name Tags** — Update `orchestrator.py` to add Name tag when launching workers
+6. ~~**Update Launch Template**~~ ✓ — Version 7: orchestrator AMI + Name/Owner/Project tags
+7. ~~**Fix Worker Name Tags**~~ ✓ — Workers tagged with Name, Owner, Project, RunId, Database, Dataset
 8. **Test Full Orchestrator Flow** — Verify end-to-end with IAM fix + new AMI
 9. **Run All Databases** — Benchmark all 9 DBs on SIFT-1M and GIST-1M, generate comparison report
 10. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI

@@ -96,7 +96,7 @@ def launch_worker(
             "ResourceType": "instance",
             "Tags": [
                 {"Key": "Name", "Value": instance_name},
-                {"Key": "Owner", "Value": "orchestrator"},
+                {"Key": "Owner", "Value": "acoetzee"},
                 {"Key": "Project", "Value": "vectordb-benchmark"},
                 {"Key": "RunId", "Value": run_id},
                 {"Key": "Database", "Value": database},
