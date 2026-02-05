@@ -1025,6 +1025,9 @@ class ComparisonReportGenerator:
     # Reference ef for executive summary (common operating point)
     REFERENCE_EF = 128
 
+    # Databases excluded from ranking (not comparable to client-server disk-persisted)
+    EXCLUDED_DBS = {"FAISS", "Redis"}
+
     def __init__(self, db_path: str = "results/benchmark.db", configs_dir: str = "configs"):
         self._rg = ReportGenerator(db_path=db_path, configs_dir=configs_dir)
 
@@ -1104,8 +1107,10 @@ class ComparisonReportGenerator:
         lines.append("<h2>Executive Summary</h2>")
         lines.append(f'<p class="note">All search metrics at HNSW efSearch={self.REFERENCE_EF}. '
                       f'Sorted by average QPS across datasets (descending). '
-                      f'<span class="rank-top-inline">Green</span> = top 2 client-server, '
-                      f'<span class="rank-bottom-inline">red</span> = bottom 2.</p>')
+                      f'<span class="rank-top-inline">Green</span> = top 2, '
+                      f'<span class="rank-bottom-inline">red</span> = bottom 2. '
+                      f'<span class="row-excluded-inline">Yellow rows</span> '
+                      f'(FAISS, Redis) excluded from ranking.</p>')
 
         # Caveats callout
         lines.append('<div class="caveat-box">'
@@ -1171,16 +1176,16 @@ class ComparisonReportGenerator:
         # Sort by avg QPS descending
         db_rows.sort(key=lambda x: x[4], reverse=True)
 
-        # Compute ranks per dataset for QPS (client-server only)
+        # Compute ranks per dataset for QPS (exclude FAISS/Redis)
         cs_qps_ranks: Dict[str, Dict[str, int]] = {}  # ds -> {db_name: rank}
         for ds in datasets:
-            cs_entries = [
+            ranked_entries = [
                 (row[0], row[2].get(ds))
                 for row in db_rows
-                if row[1] == "client-server" and row[2].get(ds)
+                if row[0] not in self.EXCLUDED_DBS and row[2].get(ds)
             ]
-            cs_entries.sort(key=lambda x: x[1].qps if x[1] else 0, reverse=True)
-            cs_qps_ranks[ds] = {name: i + 1 for i, (name, _) in enumerate(cs_entries)}
+            ranked_entries.sort(key=lambda x: x[1].qps if x[1] else 0, reverse=True)
+            cs_qps_ranks[ds] = {name: i + 1 for i, (name, _) in enumerate(ranked_entries)}
 
         # Build rows
         rows_html: List[str] = []
@@ -1194,7 +1199,9 @@ class ComparisonReportGenerator:
             if persistence == "memory" and arch != "embedded":
                 notes_parts.append("in-memory")
             notes_label = ", ".join(notes_parts)
-            row = f"<tr><td><strong>{db_name}</strong></td><td>{notes_label}</td>"
+            excluded = db_name in self.EXCLUDED_DBS
+            row_class = ' class="row-excluded"' if excluded else ""
+            row = f"<tr{row_class}><td><strong>{db_name}</strong></td><td>{notes_label}</td>"
 
             for ds in datasets:
                 s = search_by_ds.get(ds)
@@ -1203,7 +1210,7 @@ class ComparisonReportGenerator:
 
                 if s:
                     rank_class = ""
-                    if arch == "client-server" and n_cs >= 3:
+                    if not excluded and n_cs >= 3:
                         if rank <= 2:
                             rank_class = " class=\"rank-top\""
                         elif rank >= n_cs - 1:
@@ -1597,15 +1604,16 @@ class ComparisonReportGenerator:
 
         rows_html: List[str] = []
         for db, idx, config, qps, r10, r100, p50, p95, p99 in rows_data:
+            row_class = ' class="row-excluded"' if db in self.EXCLUDED_DBS else ""
             if batch:
                 rows_html.append(
-                    f"<tr><td>{db}</td><td>{idx}</td>"
+                    f"<tr{row_class}><td>{db}</td><td>{idx}</td>"
                     f"<td>{config}</td><td>{qps:,.0f}</td>"
                     f"<td>{r10}</td><td>{r100}</td></tr>"
                 )
             else:
                 rows_html.append(
-                    f"<tr><td>{db}</td><td>{idx}</td>"
+                    f"<tr{row_class}><td>{db}</td><td>{idx}</td>"
                     f"<td>{config}</td><td>{qps:,.0f}</td>"
                     f"<td>{r10}</td><td>{r100}</td>"
                     f"<td>{p50}</td><td>{p95}</td><td>{p99}</td></tr>"
@@ -1637,7 +1645,8 @@ class ComparisonReportGenerator:
 
         rows: List[str] = []
         for run in sorted(runs, key=_best_hnsw_qps, reverse=True):
-            row = f"<tr><td>{run.database}</td>"
+            row_class = ' class="row-excluded"' if run.database in self.EXCLUDED_DBS else ""
+            row = f"<tr{row_class}><td>{run.database}</td>"
             for ef in ef_values:
                 result = next(
                     (s for s in run.search_results
@@ -1838,6 +1847,10 @@ class ComparisonReportGenerator:
         .rank-bottom {{ background: #fee2e2 !important; }}
         .rank-top-inline {{ background: #dcfce7; padding: 1px 5px; border-radius: 3px; }}
         .rank-bottom-inline {{ background: #fee2e2; padding: 1px 5px; border-radius: 3px; }}
+        .row-excluded-inline {{ background: #fef9c3; padding: 1px 5px; border-radius: 3px; }}
+
+        /* Excluded rows (FAISS/Redis — not comparable) */
+        .row-excluded td {{ background: #fef9c3 !important; }}
 
         /* Caveat callout box */
         .caveat-box {{
