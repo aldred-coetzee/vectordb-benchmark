@@ -63,6 +63,11 @@ echo "========================================"
 RUN_ID=$(date +%Y-%m-%d-%H%M)
 S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${RUN_ID}"
 
+# Update instance Name tag to include run ID
+aws ec2 create-tags --resources $INSTANCE_ID \
+    --tags "Key=Name,Value=vectordb-orchestrator-$RUN_ID" \
+    --region $AWS_REGION
+
 cleanup() {
     EXIT_CODE=$?
     echo "Orchestrator cleanup... (exit code: $EXIT_CODE)"
