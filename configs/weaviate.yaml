@@ -33,6 +33,7 @@ metadata:
   persistence: disk
   license: BSD-3-Clause
   url: https://weaviate.io
+  notes: "gRPC. Uses L2-squared (not L2) distance metric. Collection names auto-normalized to PascalCase. efSearch changeable at runtime via Reconfigure API."
 
 # Weaviate-specific parameters
 params:

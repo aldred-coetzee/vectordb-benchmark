@@ -31,6 +31,7 @@ metadata:
   persistence: disk
   license: PostgreSQL License
   url: https://github.com/pgvector/pgvector
+  notes: "SQL-based (PostgreSQL wire protocol). Flat index = full table scan. HNSW index build is extremely slow at scale (~9 hrs for 10M vectors). Excluded from SIFT-10M by default."
 
 # pgvector-specific parameters
 params:

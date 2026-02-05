@@ -15,6 +15,7 @@ metadata:
   persistence: disk
   license: Apache-2.0
   url: https://lancedb.com
+  notes: "Embedded, disk-backed. Uses IVF_HNSW_SQ (not pure HNSW) — efSearch mapped to refine_factor, so not directly comparable to other HNSW implementations."
 
 # LanceDB-specific parameters
 params:

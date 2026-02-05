@@ -28,6 +28,7 @@ metadata:
   persistence: disk
   license: RSALv2/SSPLv1
   url: https://redis.io/docs/stack/
+  notes: "In-memory only. No volume persistence (old RDB dumps caused BusyLoadingError). Each benchmark starts fresh — may not reflect production disk-backed behavior."
 
 # Redis-specific parameters
 params:

@@ -54,6 +54,7 @@ metadata:
   persistence: disk
   license: Apache-2.0
   url: https://milvus.io
+  notes: "gRPC. Collection must be loaded into memory before search (adds one-time latency). Insert batch size auto-limited for 64MB gRPC message size."
 
 # Milvus-specific parameters
 params:
