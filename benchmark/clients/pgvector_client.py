@@ -84,11 +84,11 @@ class PGVectorClient(BaseVectorDBClient):
             self._connection.autocommit = True
             self._cursor = self._connection.cursor()
 
-            # Register pgvector extension
-            register_vector(self._connection)
-
-            # Ensure pgvector extension is installed
+            # Ensure pgvector extension is installed (must be before register_vector)
             self._cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+            # Register pgvector types with psycopg2
+            register_vector(self._connection)
 
             print(f"Connected to PostgreSQL pgvector at {host}:{port}")
         except Exception as e:
