@@ -468,13 +468,16 @@ class BenchmarkRunner:
             flat_search = self.run_search_benchmark("benchmark_flat", flat_search_config)
             results.search_results.append(flat_search)
 
-            # Run batch search if supported
+            # Run batch search if supported (non-fatal — don't lose sequential results)
             if self.client.has_batch_search:
                 print("\n  Running batch search on flat index...")
-                batch_result = self.run_batch_search_benchmark(
-                    "benchmark_flat", flat_search_config
-                )
-                results.search_results.append(batch_result)
+                try:
+                    batch_result = self.run_batch_search_benchmark(
+                        "benchmark_flat", flat_search_config
+                    )
+                    results.search_results.append(batch_result)
+                except Exception as e:
+                    print(f"  Warning: Batch search failed (sequential results preserved): {e}")
         else:
             print("\nSkipping FLAT index benchmark (not in indexes_to_run)")
 
@@ -506,7 +509,7 @@ class BenchmarkRunner:
                 )
                 results.search_results.append(search_result)
 
-            # Run batch search for each efSearch value if supported
+            # Run batch search for each efSearch value if supported (non-fatal)
             if self.client.has_batch_search:
                 print("\n  Running batch search on HNSW index...")
                 for ef_search in hnsw_ef_search_values:
@@ -517,10 +520,13 @@ class BenchmarkRunner:
                         index_type="hnsw",
                         params={"efSearch": ef_search},
                     )
-                    batch_result = self.run_batch_search_benchmark(
-                        "benchmark_hnsw", hnsw_batch_config
-                    )
-                    results.search_results.append(batch_result)
+                    try:
+                        batch_result = self.run_batch_search_benchmark(
+                            "benchmark_hnsw", hnsw_batch_config
+                        )
+                        results.search_results.append(batch_result)
+                    except Exception as e:
+                        print(f"  Warning: Batch search (ef={ef_search}) failed (sequential results preserved): {e}")
         else:
             print("\nSkipping HNSW index benchmark (not in indexes_to_run)")
 

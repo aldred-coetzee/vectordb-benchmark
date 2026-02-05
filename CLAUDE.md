@@ -484,6 +484,9 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | 9 | KDB.AI metadata missing in report | KDB.AI | `"KDB.AI".lower()` → `"kdb.ai"` → looks for `kdb.ai.yaml` not `kdbai.yaml` | Strip dots in config lookup in `report_generator.py` |
 | 10 | Qdrant GIST batch size still too large | Qdrant + GIST | Batch sizing used `dims * 4` (binary) but Qdrant sends JSON where floats are ~12 bytes | Changed to `dims * 12 + 200` in `qdrant_client.py` |
 | 11 | KDB.AI insert 82x slower than necessary | KDB.AI | `batch_vectors.tolist()` converted numpy to Python lists (millions of float objects) | Use `list(batch_vectors.astype(np.float32))` to pass numpy arrays directly |
+| 12 | Qdrant GIST insert still too large (49MB) | Qdrant + GIST | JSON float estimate of 12 bytes/float too low — GIST floats have long decimals (~20 bytes) | Changed to `dims * 20 + 200` in `qdrant_client.py` |
+| 13 | Qdrant batch search timeout on SIFT | Qdrant + SIFT | 10,000 FLAT queries sent in single HTTP call, server-side brute-force too slow for default timeout | Cap batch at 500 queries + increase client timeout to 300s |
+| 14 | Batch search error kills entire benchmark | All batch DBs | Batch search exception propagates, losing sequential results already collected | Wrap batch search in try/except in `runner.py` |
 
 ### Config Improvements
 
