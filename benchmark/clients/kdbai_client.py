@@ -196,7 +196,7 @@ class KDBAIClient(BaseVectorDBClient):
                 df = pd.DataFrame(
                     {
                         "id": batch_ids.astype(np.int64),
-                        "vectors": batch_vectors.tolist(),
+                        "vectors": list(batch_vectors.astype(np.float32)),
                     }
                 )
                 table.insert(df)
