@@ -66,7 +66,7 @@ benchmark/
 configs/               # YAML configs per database (index params, efSearch sweeps)
 results/               # Benchmark output (CSV, JSON, HTML reports)
 data/                  # Datasets (sift/, gist/, sift-dev/) and DB runtime storage
-scripts/               # Utility scripts (generate_dev_datasets.py)
+scripts/               # Utility scripts (generate_dev_datasets.py, pull_run.py)
 aws/                   # AWS orchestration (orchestrator.py, worker_startup.sh)
 ```
 
@@ -82,8 +82,11 @@ python run_benchmark.py --config configs/qdrant.yaml --dataset sift-dev
 # Run all databases sequentially
 python run_all.py
 
-# Generate comparison report from results
-python generate_report.py
+# Pull AWS run results and generate report
+python scripts/pull_run.py 2026-02-05-1816
+
+# Generate report from existing merged DB
+python generate_report.py --run-id 2026-02-05-1816
 
 # Generate dev datasets from full datasets
 python scripts/generate_dev_datasets.py --datasets sift
@@ -501,6 +504,16 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Qdrant batch API**: Use `query_batch_points()` with `QueryRequest`, NOT `search_batch()`/`SearchRequest` (deprecated/removed).
 - **FAISS threading**: Single-query search is always single-threaded. Only batch search benefits from `omp_set_num_threads()`. Never use concurrent client threads — causes harmful OpenMP thread nesting.
 - **LanceDB excluded**: Does not support pure HNSW or FLAT — only IVF-based indexes (IVF_PQ, IVF_HNSW_SQ, IVF_HNSW_PQ). Previous results used IVF_HNSW_SQ disguised as HNSW, producing unfairly low QPS (65 vs FAISS 2,403). Now excluded via `supported_indexes = set()`. Will be re-added when IVF-PQ benchmarks are implemented.
+- **Redis persistence**: Corrected from `disk` to `memory`. Redis operates entirely in-memory — RDB snapshots are background-only and don't affect benchmark performance.
+- **Skipped job status**: Databases with no supported indexes (LanceDB) now get `status: skipped` instead of `failed`. Worker handles missing results dir gracefully, orchestrator shows skipped separately.
+- **pull_run.py**: Single command to pull AWS run results from S3, merge per-job DBs, and generate a named report. Usage: `python scripts/pull_run.py 2026-02-05-1816`. Output: `results/benchmark-{run_id}.db` + `results/report-{run_id}.html`. All merged runs share a `run_label` column for traceability.
+- **Batch search resilience**: Batch search failures are now non-fatal — sequential results are preserved even if batch search times out or errors (bugs #12-14).
+
+**Run 2026-02-05-1816** (6 DBs × sift + gist, excludes pgvector + LanceDB):
+- 12/16 jobs completed with data. Qdrant empty (bugs #12-14, fixed). LanceDB skipped (expected).
+- Report: `results/report-2026-02-05-1816.html`, DB: `results/benchmark-2026-02-05-1816.db`
+- KDB.AI ingest 9-11x faster than previous run (numpy fix). HNSW ingest: 7,993 vec/s (fastest client-server).
+- Pull with: `python scripts/pull_run.py 2026-02-05-1816`
 
 **First Worker Test Results** (2026-02-04):
 - Qdrant on SIFT-1M: Completed successfully
