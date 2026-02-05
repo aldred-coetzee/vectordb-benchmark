@@ -2,7 +2,7 @@
 # Orchestrator startup script for vectordb-benchmark
 # This script is passed as user-data when launching the orchestrator EC2 instance
 #
-# Uses the same Worker AMI but runs orchestrator.py instead of a single benchmark.
+# Runs on the Orchestrator AMI (Python 3.12, boto3, git — no Docker/datasets).
 # Launches worker instances, monitors progress, aggregates results.
 #
 # CONFIGURATION VIA INSTANCE TAGS:
@@ -23,8 +23,9 @@ S3_BUCKET="vectordb-benchmark-590780615264"
 MAX_RUNTIME_MINUTES=240  # 4 hours max for full suite
 AWS_REGION="us-west-2"
 
-# Get instance ID for reading tags
-INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+# Get instance ID for reading tags (IMDSv2 - requires token on AL2023)
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
 echo "Instance ID: $INSTANCE_ID"
 
 # Read configuration from instance tags (with defaults)
