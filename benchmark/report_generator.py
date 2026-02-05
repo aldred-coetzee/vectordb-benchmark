@@ -192,16 +192,11 @@ class ReportGenerator:
             search_results=search_results,
         )
 
-    def _get_best_search_result(self, run: RunData, min_recall: float = 0.97) -> Optional[SearchData]:
-        """Get the search result with highest QPS at minimum recall threshold."""
+    def _get_best_search_result(self, run: RunData) -> Optional[SearchData]:
+        """Get the HNSW search result with highest QPS (lowest efSearch)."""
         hnsw_results = [s for s in run.search_results if s.index_type.lower() == "hnsw"]
-        valid_results = [s for s in hnsw_results if s.recall_at_10 and s.recall_at_10 >= min_recall]
-
-        if valid_results:
-            return max(valid_results, key=lambda s: s.qps)
-        elif hnsw_results:
-            # Return highest recall if none meet threshold
-            return max(hnsw_results, key=lambda s: s.recall_at_10 or 0)
+        if hnsw_results:
+            return max(hnsw_results, key=lambda s: s.qps)
         return None
 
     def generate_findings(self, runs: List[RunData]) -> List[str]:
@@ -460,7 +455,7 @@ class ReportGenerator:
 
         # Search Performance Summary (Best Recall Config) - sorted by QPS (descending)
         lines.append("## Search Performance Summary")
-        lines.append("*HNSW index at ~97%+ recall where available, sorted by QPS*")
+        lines.append("*HNSW index at highest-QPS config (lowest efSearch), sorted by QPS. Recall shown for comparison.*")
         lines.append("")
         lines.append("| Database | Config | QPS | R@10 | R@100 | P50 (ms) | P99 (ms) |")
         lines.append("|----------|--------|-----|------|-------|----------|----------|")
