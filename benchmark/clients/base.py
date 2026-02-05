@@ -164,6 +164,11 @@ class BaseVectorDBClient(ABC):
         """
         pass
 
+    @property
+    def has_batch_search(self) -> bool:
+        """Whether this client supports native batch search."""
+        return False
+
     def batch_search(
         self,
         table_name: str,

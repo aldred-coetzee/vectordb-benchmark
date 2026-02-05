@@ -1,7 +1,7 @@
 """Qdrant vector database client implementation."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -12,6 +12,7 @@ try:
         Distance,
         HnswConfigDiff,
         PointStruct,
+        QueryRequest,
         SearchParams,
         VectorParams,
     )
@@ -265,6 +266,83 @@ class QdrantClient(BaseVectorDBClient):
 
         except Exception as e:
             raise RuntimeError(f"Search failed: {e}")
+
+    @property
+    def has_batch_search(self) -> bool:
+        """Qdrant supports batch search via search_batch() API."""
+        return True
+
+    def batch_search(
+        self,
+        table_name: str,
+        query_vectors: np.ndarray,
+        k: int,
+        search_config: SearchConfig,
+    ) -> List[SearchResult]:
+        """
+        Batch search using Qdrant's search_batch() API.
+
+        Sends all queries in a single HTTP request. Sub-batches if needed
+        to stay under 32MB JSON payload limit.
+        """
+        if self._client is None:
+            raise RuntimeError("Not connected to database")
+
+        # Build search parameters
+        if search_config.index_type == "flat":
+            search_params = SearchParams(exact=True)
+        else:
+            ef_search = search_config.params.get("efSearch", 64)
+            search_params = SearchParams(hnsw_ef=ef_search)
+
+        # Calculate sub-batch size to stay under 32MB JSON payload
+        dims = query_vectors.shape[1]
+        max_payload_bytes = 30_000_000  # 30MB conservative
+        bytes_per_query = dims * 12 + 200  # JSON-encoded floats
+        batch_size = max(10, min(len(query_vectors), max_payload_bytes // bytes_per_query))
+
+        all_results = []
+
+        try:
+            for i in range(0, len(query_vectors), batch_size):
+                batch = query_vectors[i:i + batch_size]
+
+                requests = [
+                    QueryRequest(
+                        query=query.tolist(),
+                        limit=k,
+                        params=search_params,
+                    )
+                    for query in batch
+                ]
+
+                start_time = time.perf_counter()
+                responses = self._client.query_batch_points(
+                    collection_name=table_name,
+                    requests=requests,
+                )
+                end_time = time.perf_counter()
+                batch_ms = (end_time - start_time) * 1000
+
+                for resp in responses:
+                    points = resp.points if hasattr(resp, 'points') else resp
+                    if points:
+                        ids = np.array([point.id for point in points], dtype=np.int64)
+                        distances = np.array([point.score for point in points], dtype=np.float32)
+                    else:
+                        ids = np.array([], dtype=np.int64)
+                        distances = np.array([], dtype=np.float32)
+
+                    all_results.append(SearchResult(
+                        ids=ids,
+                        distances=distances,
+                        latency_ms=batch_ms / len(batch),
+                    ))
+
+        except Exception as e:
+            raise RuntimeError(f"Batch search failed: {e}")
+
+        return all_results
 
     def get_stats(self, table_name: str) -> Dict[str, Any]:
         """

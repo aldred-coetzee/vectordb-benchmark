@@ -15,7 +15,7 @@ metadata:
   persistence: memory
   license: MIT
   url: https://github.com/facebookresearch/faiss
-  notes: "Embedded (in-process), no network overhead. Baseline reference for pure algorithm performance."
+  notes: "Embedded (in-process), no network overhead. Baseline reference for pure algorithm performance. Native batch search via index.search(2D array) — SIMD-optimized multi-query."
 
 # FAISS-specific parameters
 params:

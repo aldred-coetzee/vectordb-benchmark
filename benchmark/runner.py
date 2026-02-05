@@ -41,9 +41,9 @@ class SearchResult:
     index_type: str
     search_config: str  # Human-readable config description
     qps: float
-    latency_p50_ms: float
-    latency_p95_ms: float
-    latency_p99_ms: float
+    latency_p50_ms: Optional[float]
+    latency_p95_ms: Optional[float]
+    latency_p99_ms: Optional[float]
     recall_at_10: float
     recall_at_100: float
     cpu_percent: float
@@ -288,6 +288,99 @@ class BenchmarkRunner:
 
         return result
 
+    def run_batch_search_benchmark(
+        self,
+        table_name: str,
+        search_config: SearchConfig,
+    ) -> SearchResult:
+        """
+        Run a batch search benchmark for a specific configuration.
+
+        Sends all query vectors in a single API call (or minimal sub-batches).
+        Measures total throughput (QPS) and recall. Per-query latency
+        percentiles are not available since the database processes all
+        queries together.
+
+        Args:
+            table_name: Name of the table to search
+            search_config: Search configuration
+
+        Returns:
+            SearchResult with batch performance metrics (latencies are None)
+        """
+        config_desc = search_config.get_description()
+        print(f"\n  Batch search config: {search_config.index_type} {config_desc}")
+
+        # Get query vectors and ground truth
+        queries = self.dataset.query_vectors
+        ground_truth = self.dataset.ground_truth
+        num_queries = len(queries)
+        k = max(self.k_values)
+
+        if num_queries == 0:
+            raise ValueError("No query vectors available")
+
+        if len(ground_truth) != num_queries:
+            raise ValueError(
+                f"Ground truth count ({len(ground_truth)}) does not match "
+                f"query vector count ({num_queries})"
+            )
+
+        # Warmup with a small batch
+        warmup_size = min(10, num_queries)
+        print(f"    Warmup: batch of {warmup_size} queries...")
+        self.client.batch_search(table_name, queries[:warmup_size], k, search_config)
+
+        # Run timed batch search
+        print(f"    Running batch search: {num_queries:,} queries in single call...")
+
+        start_time = time.perf_counter()
+        batch_results = self.client.batch_search(table_name, queries, k, search_config)
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+
+        # Calculate QPS
+        qps = calculate_qps(num_queries, total_time)
+
+        # Extract IDs for recall calculation
+        all_retrieved_ids = [r.ids for r in batch_results]
+
+        # Normalize results to exactly k elements per query
+        normalized_results = []
+        for ids in all_retrieved_ids:
+            if len(ids) < k:
+                normalized_results.append(list(ids) + [-1] * (k - len(ids)))
+            elif len(ids) > k:
+                normalized_results.append(ids[:k])
+            else:
+                normalized_results.append(ids)
+
+        retrieved_array = np.array(normalized_results)
+
+        # Calculate recall
+        recall_10 = calculate_recall_at_k(retrieved_array, ground_truth, 10)
+        recall_100 = calculate_recall_at_k(retrieved_array, ground_truth, 100)
+
+        # Batch index type suffix
+        batch_index_type = search_config.index_type.upper() + "_BATCH"
+
+        result = SearchResult(
+            index_type=batch_index_type,
+            search_config=config_desc,
+            qps=qps,
+            latency_p50_ms=None,
+            latency_p95_ms=None,
+            latency_p99_ms=None,
+            recall_at_10=recall_10,
+            recall_at_100=recall_100,
+            cpu_percent=0,
+            memory_gb=0,
+        )
+
+        print(f"    Results: QPS={qps:,.0f}, R@10={recall_10:.4f}, R@100={recall_100:.4f} ({total_time:.2f}s total)")
+
+        return result
+
     def run_full_benchmark(
         self,
         hnsw_ef_search_values: List[int] = None,
@@ -374,6 +467,14 @@ class BenchmarkRunner:
             )
             flat_search = self.run_search_benchmark("benchmark_flat", flat_search_config)
             results.search_results.append(flat_search)
+
+            # Run batch search if supported
+            if self.client.has_batch_search:
+                print("\n  Running batch search on flat index...")
+                batch_result = self.run_batch_search_benchmark(
+                    "benchmark_flat", flat_search_config
+                )
+                results.search_results.append(batch_result)
         else:
             print("\nSkipping FLAT index benchmark (not in indexes_to_run)")
 
@@ -404,6 +505,22 @@ class BenchmarkRunner:
                     "benchmark_hnsw", hnsw_search_config
                 )
                 results.search_results.append(search_result)
+
+            # Run batch search for each efSearch value if supported
+            if self.client.has_batch_search:
+                print("\n  Running batch search on HNSW index...")
+                for ef_search in hnsw_ef_search_values:
+                    if ef_search < k:
+                        continue
+                    hnsw_batch_config = SearchConfig(
+                        index_name="hnsw_index",
+                        index_type="hnsw",
+                        params={"efSearch": ef_search},
+                    )
+                    batch_result = self.run_batch_search_benchmark(
+                        "benchmark_hnsw", hnsw_batch_config
+                    )
+                    results.search_results.append(batch_result)
         else:
             print("\nSkipping HNSW index benchmark (not in indexes_to_run)")
 

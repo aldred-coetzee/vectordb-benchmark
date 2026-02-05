@@ -1,7 +1,7 @@
 """Milvus vector database client implementation."""
 
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -259,6 +259,74 @@ class MilvusClient(BaseVectorDBClient):
 
         except Exception as e:
             raise RuntimeError(f"Search failed: {e}")
+
+    @property
+    def has_batch_search(self) -> bool:
+        """Milvus supports batch search via collection.search(data=[...])."""
+        return True
+
+    def batch_search(
+        self,
+        table_name: str,
+        query_vectors: np.ndarray,
+        k: int,
+        search_config: SearchConfig,
+    ) -> List[SearchResult]:
+        """
+        Batch search using Milvus native multi-vector search.
+
+        Passes all query vectors in a single collection.search() call.
+        Sub-batches if needed to stay under 64MB gRPC limit.
+        """
+        try:
+            collection = Collection(table_name)
+
+            if table_name not in self._loaded_collections:
+                collection.load()
+                self._loaded_collections.add(table_name)
+
+            # Build search parameters
+            if search_config.index_type == "flat":
+                search_params = {"metric_type": "L2", "params": {}}
+            else:
+                ef_search = search_config.params.get("efSearch", 64)
+                search_params = {"metric_type": "L2", "params": {"ef": ef_search}}
+
+            # Sub-batch to stay under 64MB gRPC limit
+            dims = query_vectors.shape[1]
+            max_payload_bytes = 50_000_000  # 50MB conservative
+            bytes_per_vector = dims * 4 + 50  # float32 + overhead (binary gRPC)
+            batch_size = max(10, min(len(query_vectors), max_payload_bytes // bytes_per_vector))
+
+            all_results = []
+
+            for i in range(0, len(query_vectors), batch_size):
+                batch = query_vectors[i:i + batch_size]
+
+                start_time = time.perf_counter()
+                results = collection.search(
+                    data=batch.tolist(),
+                    anns_field="vector",
+                    param=search_params,
+                    limit=k,
+                    output_fields=["id"],
+                )
+                end_time = time.perf_counter()
+                batch_ms = (end_time - start_time) * 1000
+
+                for hits in results:
+                    ids = np.array([hit.id for hit in hits], dtype=np.int64)
+                    distances = np.array([hit.distance for hit in hits], dtype=np.float32)
+                    all_results.append(SearchResult(
+                        ids=ids,
+                        distances=distances,
+                        latency_ms=batch_ms / len(batch),
+                    ))
+
+            return all_results
+
+        except Exception as e:
+            raise RuntimeError(f"Batch search failed: {e}")
 
     def get_stats(self, table_name: str) -> Dict[str, Any]:
         """

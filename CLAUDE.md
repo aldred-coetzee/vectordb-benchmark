@@ -482,6 +482,8 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | 7 | Milvus 192MB gRPC payload on GIST | Milvus + GIST | Entire vector array sent in single gRPC call, exceeds 64MB limit | Auto-calculate batch size based on dimensions in `milvus_client.py` |
 | 8 | KDB.AI large payload on GIST | KDB.AI + GIST | Same pattern as Milvus/Qdrant | Auto-calculate batch size based on dimensions in `kdbai_client.py` |
 | 9 | KDB.AI metadata missing in report | KDB.AI | `"KDB.AI".lower()` → `"kdb.ai"` → looks for `kdb.ai.yaml` not `kdbai.yaml` | Strip dots in config lookup in `report_generator.py` |
+| 10 | Qdrant GIST batch size still too large | Qdrant + GIST | Batch sizing used `dims * 4` (binary) but Qdrant sends JSON where floats are ~12 bytes | Changed to `dims * 12 + 200` in `qdrant_client.py` |
+| 11 | KDB.AI insert 82x slower than necessary | KDB.AI | `batch_vectors.tolist()` converted numpy to Python lists (millions of float objects) | Use `list(batch_vectors.astype(np.float32))` to pass numpy arrays directly |
 
 ### Config Improvements
 
@@ -491,6 +493,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **KDB.AI indexes**: Switched from `flat`/`hnsw` (in-memory, single-threaded) to `qFlat`/`qHnsw` (disk-backed, multithreaded) — 72% faster search. Note: API spelling is `qHnsw` not `qHNSW`.
 - **Worker instances**: Upgraded from m5.2xlarge (8 CPU, 32GB) to m5.4xlarge (16 CPU, 64GB) — matches local benchmark config (cpus: 16, memory: 64g)
 - **Database notes**: All 9 configs have `metadata.notes` documenting benchmark-relevant quirks (payload limits, index types, protocol caveats)
+- **Batch search benchmark**: Added alongside sequential search. 5/9 databases support native batch search APIs (FAISS, Qdrant, Milvus, ChromaDB, KDB.AI). Sends all queries in one API call to measure throughput. P50/P95/P99 latency not available for batch (all queries processed together). Results stored with `HNSW_BATCH`/`FLAT_BATCH` index type suffix.
 
 **First Worker Test Results** (2026-02-04):
 - Qdrant on SIFT-1M: Completed successfully

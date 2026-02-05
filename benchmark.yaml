@@ -98,6 +98,10 @@ metrics:
     name: "Ingest Throughput (vectors/sec)"
     description: "Rate of vector insertion including index building. For HNSW, each insert updates the graph, so throughput decreases as the dataset grows."
 
+  batch_qps:
+    name: "Batch QPS"
+    description: "Queries per second when all queries are sent in a single API call. Measures throughput under batch workloads. Available for 5/9 databases (FAISS, Qdrant, Milvus, ChromaDB, KDB.AI). Per-query latency percentiles are not available — the database processes queries together."
+
   ef_search:
     name: "efSearch"
     description: "HNSW search beam width — the number of candidate nodes evaluated at each step of graph traversal. Higher values explore more of the graph, improving recall at the cost of QPS. Swept across [32, 64, 128, 256] to produce a recall-vs-speed tradeoff curve."

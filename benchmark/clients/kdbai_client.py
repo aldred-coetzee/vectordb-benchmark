@@ -1,7 +1,7 @@
 """KDB.AI vector database client implementation."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -270,6 +270,82 @@ class KDBAIClient(BaseVectorDBClient):
 
         except Exception as e:
             raise RuntimeError(f"Search failed: {e}")
+
+    @property
+    def has_batch_search(self) -> bool:
+        """KDB.AI supports batch search via table.search(vectors={idx: [v1, v2, ...]})."""
+        return True
+
+    def batch_search(
+        self,
+        table_name: str,
+        query_vectors: np.ndarray,
+        k: int,
+        search_config: SearchConfig,
+    ) -> List[SearchResult]:
+        """
+        Batch search using KDB.AI native multi-query support.
+
+        Passes all query vectors as numpy arrays in a single table.search() call.
+        """
+        table = self._get_table(table_name)
+        index_name = search_config.index_name
+
+        # Build search parameters — pass numpy arrays directly (not .tolist())
+        queries = list(query_vectors.astype(np.float32))
+        search_vectors = {index_name: queries}
+
+        # Build index params based on index type
+        if search_config.index_type == "hnsw":
+            index_params = {
+                index_name: {"efSearch": search_config.params.get("efSearch", 64)}
+            }
+        else:
+            index_params = {}
+
+        try:
+            start_time = time.perf_counter()
+
+            if index_params:
+                results = table.search(
+                    vectors=search_vectors, n=k, index_params=index_params
+                )
+            else:
+                results = table.search(vectors=search_vectors, n=k)
+
+            end_time = time.perf_counter()
+            total_ms = (end_time - start_time) * 1000
+
+            all_results = []
+            num_queries = len(query_vectors)
+
+            if isinstance(results, list):
+                for result_df in results:
+                    if "id" in result_df.columns:
+                        ids = result_df["id"].values.astype(np.int64)
+                    else:
+                        ids = np.array([], dtype=np.int64)
+
+                    distances = None
+                    if "__nn_distance" in result_df.columns:
+                        distances = result_df["__nn_distance"].values.astype(np.float32)
+
+                    all_results.append(SearchResult(
+                        ids=ids,
+                        distances=distances,
+                        latency_ms=total_ms / num_queries,
+                    ))
+            else:
+                # Single result (shouldn't happen with batch, but handle gracefully)
+                all_results.append(SearchResult(
+                    ids=np.array([], dtype=np.int64),
+                    latency_ms=total_ms,
+                ))
+
+            return all_results
+
+        except Exception as e:
+            raise RuntimeError(f"Batch search failed: {e}")
 
     def get_stats(self, table_name: str) -> Dict[str, Any]:
         """

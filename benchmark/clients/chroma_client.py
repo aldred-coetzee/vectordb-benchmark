@@ -1,7 +1,7 @@
 """ChromaDB vector database client implementation."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -240,6 +240,70 @@ class ChromaClient(BaseVectorDBClient):
 
         except Exception as e:
             raise RuntimeError(f"Search failed: {e}")
+
+    @property
+    def has_batch_search(self) -> bool:
+        """ChromaDB supports batch search via query(query_embeddings=[...])."""
+        return True
+
+    def batch_search(
+        self,
+        table_name: str,
+        query_vectors: np.ndarray,
+        k: int,
+        search_config: SearchConfig,
+    ) -> List[SearchResult]:
+        """
+        Batch search using ChromaDB native multi-query support.
+
+        Passes all query embeddings in a single collection.query() call.
+        """
+        if table_name not in self._collections:
+            self._collections[table_name] = self._client.get_collection(table_name)
+
+        collection = self._collections[table_name]
+
+        # Update search_ef if HNSW
+        if search_config.index_type == "hnsw":
+            ef_search = search_config.params.get("efSearch", 64)
+            try:
+                collection.modify(metadata={"hnsw:search_ef": ef_search})
+            except Exception:
+                pass
+
+        try:
+            start_time = time.perf_counter()
+
+            results = collection.query(
+                query_embeddings=query_vectors.tolist(),
+                n_results=k,
+                include=["distances"],
+            )
+
+            end_time = time.perf_counter()
+            total_ms = (end_time - start_time) * 1000
+
+            all_results = []
+            num_queries = len(query_vectors)
+
+            for i in range(num_queries):
+                if results["ids"] and i < len(results["ids"]) and results["ids"][i]:
+                    ids = np.array([int(id_str) for id_str in results["ids"][i]], dtype=np.int64)
+                    distances = np.array(results["distances"][i], dtype=np.float32) if results["distances"] else np.array([], dtype=np.float32)
+                else:
+                    ids = np.array([], dtype=np.int64)
+                    distances = np.array([], dtype=np.float32)
+
+                all_results.append(SearchResult(
+                    ids=ids,
+                    distances=distances,
+                    latency_ms=total_ms / num_queries,
+                ))
+
+            return all_results
+
+        except Exception as e:
+            raise RuntimeError(f"Batch search failed: {e}")
 
     def get_stats(self, table_name: str) -> Dict[str, Any]:
         """

@@ -1,7 +1,7 @@
 """FAISS vector database client implementation."""
 
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -190,6 +190,66 @@ class FAISSClient(BaseVectorDBClient):
             distances=result_distances,
             latency_ms=latency_ms
         )
+
+    @property
+    def has_batch_search(self) -> bool:
+        """FAISS natively supports multi-query search."""
+        return True
+
+    def batch_search(
+        self,
+        table_name: str,
+        query_vectors: np.ndarray,
+        k: int,
+        search_config: SearchConfig,
+    ) -> List[SearchResult]:
+        """
+        Batch search using FAISS native multi-query support.
+
+        FAISS index.search() accepts a 2D array of queries and returns
+        results for all queries in a single SIMD-optimized call.
+        """
+        if table_name not in self._indexes:
+            raise RuntimeError(f"Index '{table_name}' does not exist")
+
+        index = self._indexes[table_name]
+        id_map = self._id_maps[table_name]
+
+        # Set efSearch for HNSW indexes
+        if search_config.index_type == "hnsw":
+            ef_search = search_config.params.get("efSearch", 64)
+            index.hnsw.efSearch = ef_search
+
+        # Ensure queries are float32 and contiguous 2D array
+        queries = np.ascontiguousarray(query_vectors, dtype=np.float32)
+
+        start_time = time.perf_counter()
+        distances, indices = index.search(queries, k)
+        end_time = time.perf_counter()
+
+        total_ms = (end_time - start_time) * 1000
+
+        # Build per-query SearchResult objects
+        results = []
+        for i in range(len(queries)):
+            faiss_indices = indices[i]
+            valid_mask = faiss_indices >= 0
+            valid_indices = faiss_indices[valid_mask]
+
+            if len(valid_indices) > 0:
+                result_ids = id_map[valid_indices]
+                result_distances = distances[i][valid_mask]
+            else:
+                result_ids = np.array([], dtype=np.int64)
+                result_distances = np.array([], dtype=np.float32)
+
+            results.append(SearchResult(
+                ids=result_ids,
+                distances=result_distances,
+                latency_ms=total_ms / len(queries),
+            ))
+
+        return results
 
     def get_stats(self, table_name: str) -> Dict[str, Any]:
         """

@@ -471,6 +471,64 @@ class ReportGenerator:
                 lines.append(row)
             lines.append("")
 
+        # Batch Search Performance
+        has_batch = any(
+            s.index_type.upper().endswith("_BATCH")
+            for run in runs
+            for s in run.search_results
+        )
+        if has_batch:
+            lines.append("## Batch Search Performance")
+            lines.append("*All queries sent in a single API call. Per-query latency percentiles are not available — the database processes queries together, potentially in parallel.*")
+            lines.append("")
+
+            # Collect all batch ef_search values
+            batch_ef_values = set()
+            for run in runs:
+                for s in run.search_results:
+                    if s.index_type.upper() == "HNSW_BATCH" and s.ef_search:
+                        batch_ef_values.add(s.ef_search)
+            batch_ef_values = sorted(batch_ef_values)
+
+            if batch_ef_values:
+                header = "| Database |" + "".join(f" ef={ef} QPS | ef={ef} R@10 |" for ef in batch_ef_values)
+                lines.append(header)
+                lines.append("|" + "---|" * (1 + len(batch_ef_values) * 2))
+
+                # Only include runs that have batch results
+                batch_runs = [r for r in runs if any(s.index_type.upper().endswith("_BATCH") for s in r.search_results)]
+                for run in sorted(batch_runs, key=lambda r: max((s.qps for s in r.search_results if s.index_type.upper() == "HNSW_BATCH"), default=0), reverse=True):
+                    row = f"| {run.database} |"
+                    for ef in batch_ef_values:
+                        result = next(
+                            (s for s in run.search_results if s.index_type.upper() == "HNSW_BATCH" and s.ef_search == ef),
+                            None
+                        )
+                        if result:
+                            r10 = f"{result.recall_at_10:.3f}" if result.recall_at_10 else "-"
+                            row += f" {result.qps:,.0f} | {r10} |"
+                        else:
+                            row += " - | - |"
+                    lines.append(row)
+                lines.append("")
+
+            # Also show flat batch if present
+            flat_batch_runs = [
+                (run, next((s for s in run.search_results if s.index_type.upper() == "FLAT_BATCH"), None))
+                for run in runs
+            ]
+            flat_batch_runs = [(r, s) for r, s in flat_batch_runs if s]
+            if flat_batch_runs:
+                lines.append("### Flat Index (Batch)")
+                lines.append("")
+                lines.append("| Database | QPS | R@10 | R@100 |")
+                lines.append("|----------|-----|------|-------|")
+                for run, s in sorted(flat_batch_runs, key=lambda x: x[1].qps, reverse=True):
+                    r10 = f"{s.recall_at_10:.4f}" if s.recall_at_10 else "-"
+                    r100 = f"{s.recall_at_100:.4f}" if s.recall_at_100 else "-"
+                    lines.append(f"| {run.database} | {s.qps:,.0f} | {r10} | {r100} |")
+                lines.append("")
+
         # Key Findings
         findings = self.generate_findings(runs)
         if findings:
@@ -514,12 +572,13 @@ class ReportGenerator:
                     )
                 lines.append("")
 
-            # Search results
-            if run.search_results:
-                lines.append("**Search Results:**")
+            # Search results (sequential)
+            sequential_results = [s for s in run.search_results if not s.index_type.upper().endswith("_BATCH")]
+            if sequential_results:
+                lines.append("**Search Results (Sequential):**")
                 lines.append("| Index | Config | QPS | R@10 | R@100 | P50 | P95 | P99 |")
                 lines.append("|-------|--------|-----|------|-------|-----|-----|-----|")
-                for search in run.search_results:
+                for search in sequential_results:
                     config = f"ef={search.ef_search}" if search.ef_search else "-"
                     r10 = f"{search.recall_at_10:.4f}" if search.recall_at_10 else "-"
                     r100 = f"{search.recall_at_100:.4f}" if search.recall_at_100 else "-"
@@ -529,6 +588,24 @@ class ReportGenerator:
                     lines.append(
                         f"| {search.index_type.upper()} | {config} | {search.qps:,.0f} | "
                         f"{r10} | {r100} | {p50} | {p95} | {p99} |"
+                    )
+                lines.append("")
+
+            # Search results (batch)
+            batch_results = [s for s in run.search_results if s.index_type.upper().endswith("_BATCH")]
+            if batch_results:
+                lines.append("**Search Results (Batch):**")
+                lines.append("*All queries in single API call — no per-query latency available*")
+                lines.append("")
+                lines.append("| Index | Config | QPS | R@10 | R@100 |")
+                lines.append("|-------|--------|-----|------|-------|")
+                for search in batch_results:
+                    config = f"ef={search.ef_search}" if search.ef_search else "-"
+                    r10 = f"{search.recall_at_10:.4f}" if search.recall_at_10 else "-"
+                    r100 = f"{search.recall_at_100:.4f}" if search.recall_at_100 else "-"
+                    lines.append(
+                        f"| {search.index_type.upper()} | {config} | {search.qps:,.0f} | "
+                        f"{r10} | {r100} |"
                     )
                 lines.append("")
 

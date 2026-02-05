@@ -75,10 +75,13 @@ def print_console_report(results: BenchmarkResults) -> None:
     print("-" * 100)
 
     for r in results.search_results:
+        p50 = f"{r.latency_p50_ms:>8.2f}" if r.latency_p50_ms is not None else f"{'N/A':>8}"
+        p95 = f"{r.latency_p95_ms:>8.2f}" if r.latency_p95_ms is not None else f"{'N/A':>8}"
+        p99 = f"{r.latency_p99_ms:>8.2f}" if r.latency_p99_ms is not None else f"{'N/A':>8}"
         print(
             f"{r.index_type:<10} {r.search_config:<14} {r.qps:>8,.0f} "
-            f"{r.latency_p50_ms:>8.2f} {r.latency_p95_ms:>8.2f} "
-            f"{r.latency_p99_ms:>8.2f} {r.recall_at_10:>7.4f} {r.recall_at_100:>7.4f} "
+            f"{p50} {p95} "
+            f"{p99} {r.recall_at_10:>7.4f} {r.recall_at_100:>7.4f} "
             f"{format_percent(r.cpu_percent):>6} {format_memory(r.memory_gb):>8}"
         )
 
@@ -165,9 +168,9 @@ def save_search_csv(
                 r.index_type,
                 r.search_config,
                 f"{r.qps:.2f}",
-                f"{r.latency_p50_ms:.3f}",
-                f"{r.latency_p95_ms:.3f}",
-                f"{r.latency_p99_ms:.3f}",
+                f"{r.latency_p50_ms:.3f}" if r.latency_p50_ms is not None else "",
+                f"{r.latency_p95_ms:.3f}" if r.latency_p95_ms is not None else "",
+                f"{r.latency_p99_ms:.3f}" if r.latency_p99_ms is not None else "",
                 f"{r.recall_at_10:.6f}",
                 f"{r.recall_at_100:.6f}",
                 f"{r.cpu_percent:.2f}",
