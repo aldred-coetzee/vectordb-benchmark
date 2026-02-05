@@ -494,6 +494,9 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Worker instances**: Upgraded from m5.2xlarge (8 CPU, 32GB) to m5.4xlarge (16 CPU, 64GB) — matches local benchmark config (cpus: 16, memory: 64g)
 - **Database notes**: All 9 configs have `metadata.notes` documenting benchmark-relevant quirks (payload limits, index types, protocol caveats)
 - **Batch search benchmark**: Added alongside sequential search. 5/9 databases support native batch search APIs (FAISS, Qdrant, Milvus, ChromaDB, KDB.AI). Sends all queries in one API call to measure throughput. P50/P95/P99 latency not available for batch (all queries processed together). Results stored with `HNSW_BATCH`/`FLAT_BATCH` index type suffix.
+- **Batch ≠ parallel**: Batch reduces network round trips but server-side parallelism varies. FAISS parallelizes via OpenMP across queries. Qdrant parallelizes since v1.14 (chunked across shards). Milvus parallelizes via Knowhere thread pool. KDB.AI only parallelizes for partitioned tables — single-table batch is sequential server-side. ChromaDB behavior undocumented.
+- **Qdrant batch API**: Use `query_batch_points()` with `QueryRequest`, NOT `search_batch()`/`SearchRequest` (deprecated/removed).
+- **FAISS threading**: Single-query search is always single-threaded. Only batch search benefits from `omp_set_num_threads()`. Never use concurrent client threads — causes harmful OpenMP thread nesting.
 
 **First Worker Test Results** (2026-02-04):
 - Qdrant on SIFT-1M: Completed successfully

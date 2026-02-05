@@ -54,7 +54,7 @@ metadata:
   persistence: disk
   license: Apache-2.0
   url: https://milvus.io
-  notes: "gRPC. Collection must be loaded into memory before search (adds one-time latency). Insert batch size auto-limited for 64MB gRPC message size. Batch search via collection.search(data=[...]) — gRPC batching."
+  notes: "gRPC. Collection must be loaded into memory before search (adds one-time latency). Insert batch size auto-limited for 64MB gRPC message size. Batch search via collection.search(data=[...]) — server parallelizes across query vectors via Knowhere thread pool. For small batches (nq < 64), Milvus auto-combines concurrent requests via dynamic batching."
 
 # Milvus-specific parameters
 params:
