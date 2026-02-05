@@ -255,7 +255,7 @@ Only **2 configurations** needed:
 | Role | Instance Type | Count | Purpose |
 |------|---------------|-------|---------|
 | Orchestrator | t3.micro | 1 | Coordinate jobs, aggregate results |
-| Worker | m5.2xlarge (8 CPU, 32GB) | up to 9 | Run benchmarks |
+| Worker | m5.4xlarge (16 CPU, 64GB) | up to 9 | Run benchmarks |
 
 ### AMIs (Separate Concerns)
 
@@ -373,7 +373,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | Role | Type | Specs | Count | When |
 |------|------|-------|-------|------|
 | Orchestrator | t3.micro | 2 vCPU, 1GB RAM | 1 | During run |
-| Worker | m5.2xlarge | 8 vCPU, 32GB RAM | up to 9 | During run |
+| Worker | m5.4xlarge | 16 vCPU, 64GB RAM | up to 9 | During run |
 
 **Auto-Terminate Timeouts:**
 
@@ -399,9 +399,9 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | Component | Calculation | Cost |
 |-----------|-------------|------|
 | Orchestrator | 4 hrs × $0.0104/hr | $0.04 |
-| Workers | 35 jobs × 0.75 hrs × $0.384/hr | ~$10 |
+| Workers | 35 jobs × 0.75 hrs × $0.768/hr | ~$20 |
 | S3 transfer | Results only | ~$0.01 |
-| **Total per run** | | **~$10** |
+| **Total per run** | | **~$20** |
 
 **Standby Costs** (monthly, no runs):
 
@@ -478,11 +478,16 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | 4 | pgvector `vector type not found` | pgvector | `register_vector()` called before `CREATE EXTENSION` | Swapped order in `pgvector_client.py` |
 | 5 | Qdrant 193MB payload on GIST | Qdrant + GIST | 50K × 960-dim = 193MB, exceeds 32MB HTTP limit | Auto-calculate batch size based on dimensions |
 | 6 | Redis `BusyLoadingError` on startup | Redis | Volume mount loaded old 1GB RDB dump | Removed volume mount (benchmarks start fresh) |
+| 7 | Milvus 192MB gRPC payload on GIST | Milvus + GIST | Entire vector array sent in single gRPC call, exceeds 64MB limit | Auto-calculate batch size based on dimensions in `milvus_client.py` |
+| 8 | KDB.AI large payload on GIST | KDB.AI + GIST | Same pattern as Milvus/Qdrant | Auto-calculate batch size based on dimensions in `kdbai_client.py` |
+| 9 | KDB.AI metadata missing in report | KDB.AI | `"KDB.AI".lower()` → `"kdb.ai"` → looks for `kdb.ai.yaml` not `kdbai.yaml` | Strip dots in config lookup in `report_generator.py` |
 
 ### Config Improvements
 
 - **efSearch sweep**: Trimmed from [8,16,32,64,128,256] to [32,64,128,256] — lower values have unusable recall
 - **Dev datasets**: 10K vectors / 100 queries for ~12s smoke tests (`--dataset sift-dev`)
+- **KDB.AI THREADS**: Set to 16 (was 4) to match available CPU cores per [docs](https://code.kx.com/kdbai/latest/reference/multithreading.html)
+- **Worker instances**: Upgraded from m5.2xlarge (8 CPU, 32GB) to m5.4xlarge (16 CPU, 64GB) — matches local benchmark config (cpus: 16, memory: 64g)
 
 **First Worker Test Results** (2026-02-04):
 - Qdrant on SIFT-1M: Completed successfully
@@ -497,8 +502,9 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - User-data does `git pull` then runs local script to avoid GitHub CDN caching issues
 - Orchestrator self-tags with `vectordb-orchestrator-{run-id}` after generating run ID
 - Workers tagged with Name, Owner, Project, RunId, Database, Dataset at launch
-- Qdrant client auto-calculates insert batch size based on vector dimensions (stays under 32MB HTTP limit)
+- Dimension-aware batch sizing: Qdrant (32MB HTTP), Milvus (64MB gRPC), KDB.AI (qIPC) each auto-calculate insert batch size based on vector dimensions
 - Connection retry: 8 attempts with exponential backoff capped at 10s (total ~45s window)
+- KDB.AI performance: `THREADS` env var controls parallelism for qHNSW insert/search. `NUM_WRK` (worker processes) defaults to 1, correct for single-table benchmarks. Rule: `workers × threads <= cores`.
 
 ### Triggering Benchmarks
 
@@ -575,8 +581,8 @@ python aws/orchestrator.py --no-wait
 6. ~~**Update Launch Template**~~ ✓ — Orchestrator AMI + tags + git-based user-data
 7. ~~**Fix Worker Name Tags**~~ ✓
 8. ~~**Test Full Orchestrator Flow**~~ ✓ — Minimal test passed
-9. ~~**Fix Benchmark Code Bugs**~~ ✓ — All 6 bugs fixed, all 9 DBs pass on sift-dev
-10. **Run Clean Full Benchmark** — All 9 DBs × sift + gist
+9. ~~**Fix Benchmark Code Bugs**~~ ✓ — All 9 bugs fixed, all 9 DBs pass on sift-dev
+10. **Run Clean Full Benchmark** — All 9 DBs × sift + gist (run 2026-02-05-1047 in progress but uses old code/instance type)
 11. **Generate Comparison Report** — From S3 results
 12. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
 
