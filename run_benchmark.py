@@ -268,7 +268,8 @@ def run_with_config(
         try:
             client = get_client(database_name)
             # Retry connection — container may need time after health check passes
-            max_retries = 5
+            # (e.g., Redis loading dataset, pgvector creating extensions)
+            max_retries = 8
             for attempt in range(max_retries):
                 try:
                     if endpoint:
@@ -278,7 +279,7 @@ def run_with_config(
                     break
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        wait = 2 ** attempt  # 1, 2, 4, 8 seconds
+                        wait = min(2 ** attempt, 10)  # 1,2,4,8,10,10,10s = 45s total
                         print(f"  Connection attempt {attempt + 1} failed: {e}")
                         print(f"  Retrying in {wait}s...")
                         time.sleep(wait)
@@ -519,14 +520,14 @@ def run_legacy(args: argparse.Namespace) -> None:
     # Initialize database client
     print(f"\nConnecting to {args.database}...")
     client = get_client(args.database)
-    max_retries = 5
+    max_retries = 8
     for attempt in range(max_retries):
         try:
             client.connect(endpoint=args.endpoint)
             break
         except Exception as e:
             if attempt < max_retries - 1:
-                wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
+                wait = min(2 ** attempt, 10)  # 1,2,4,8,10,10,10s = 45s total
                 print(f"  Connection attempt {attempt + 1} failed: {e}")
                 print(f"  Retrying in {wait}s...")
                 time.sleep(wait)

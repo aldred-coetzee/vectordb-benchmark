@@ -10,8 +10,8 @@ container:
   memory: 32g
   ports:
     - "6379:6379"
-  volumes:
-    - ./data/redis:/data
+  # No volume mount — benchmarks start fresh each run
+  # (mounting ./data/redis:/data caused BusyLoadingError from old RDB dumps)
 
 # Health check configuration
 health_check:
