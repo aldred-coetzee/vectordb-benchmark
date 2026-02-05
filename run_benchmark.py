@@ -295,8 +295,9 @@ def run_with_config(
                 print(f"Warning: Dataset path not found: {dataset_path}, skipping")
                 continue
 
-            # Check for required files
-            required_files = ["sift_base.fvecs", "sift_query.fvecs", "sift_groundtruth.ivecs"]
+            # Check for required files (named after the dataset directory)
+            ds_name = dataset_path.name
+            required_files = [f"{ds_name}_base.fvecs", f"{ds_name}_query.fvecs", f"{ds_name}_groundtruth.ivecs"]
             missing_files = [f for f in required_files if not (dataset_path / f).exists()]
             if missing_files:
                 print(f"Warning: Missing files in {dataset_path}: {missing_files}, skipping")
@@ -439,12 +440,13 @@ def run_legacy(args: argparse.Namespace) -> None:
         print("Run 'python data/download_sift.py' to download the dataset.")
         sys.exit(1)
 
-    # Check for required files
-    required_files = ["sift_base.fvecs", "sift_query.fvecs", "sift_groundtruth.ivecs"]
+    # Check for required files (named after the dataset directory)
+    ds_name = dataset_path.name
+    required_files = [f"{ds_name}_base.fvecs", f"{ds_name}_query.fvecs", f"{ds_name}_groundtruth.ivecs"]
     for filename in required_files:
         if not (dataset_path / filename).exists():
             print(f"Error: Required file not found: {dataset_path / filename}")
-            print("Run 'python data/download_sift.py' to download the dataset.")
+            print(f"Expected files: {', '.join(required_files)}")
             sys.exit(1)
 
     # Set default endpoint based on database type
