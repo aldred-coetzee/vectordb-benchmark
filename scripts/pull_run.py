@@ -7,7 +7,6 @@ merges them into a single database, and generates an HTML report.
 
 Usage:
     python scripts/pull_run.py 2026-02-05-1816
-    python scripts/pull_run.py 2026-02-05-1816 --format markdown
     python scripts/pull_run.py 2026-02-05-1816 --no-report
 """
 
@@ -167,14 +166,11 @@ def main():
         epilog="""
 Examples:
     python scripts/pull_run.py 2026-02-05-1816
-    python scripts/pull_run.py 2026-02-05-1816 --format markdown
     python scripts/pull_run.py 2026-02-05-1816 --no-report
         """,
     )
 
     parser.add_argument("run_id", help="Orchestrator run ID (e.g., 2026-02-05-1816)")
-    parser.add_argument("--format", "-f", choices=["html", "markdown"], default="html",
-                        help="Report format (default: html)")
     parser.add_argument("--no-report", action="store_true",
                         help="Only download and merge, skip report generation")
     parser.add_argument("--output-dir", default="results",
@@ -248,15 +244,13 @@ Examples:
     if failed:
         print(f"  Failed:    {len(failed)} ({', '.join(failed)})")
 
-    # 5. Generate report
+    # 5. Generate per-dataset reports
     if not args.no_report:
-        ext = "html" if args.format == "html" else "md"
-        report_path = output_dir / f"report-{run_id}.{ext}"
-        print(f"\nGenerating report: {report_path}")
+        report_path = output_dir / f"report-{run_id}.html"
+        print(f"\nGenerating reports: {report_path}")
 
         cmd = [
             sys.executable, "generate_report.py",
-            "--format", args.format,
             "--db-path", str(db_path),
             "--output", str(report_path),
         ]
@@ -268,7 +262,7 @@ Examples:
     print(f"\nDone!")
     print(f"  Database: {db_path}")
     if not args.no_report:
-        print(f"  Report:   {report_path}")
+        print(f"  Reports:  {output_dir}/report-{run_id}-*.html")
 
 
 if __name__ == "__main__":

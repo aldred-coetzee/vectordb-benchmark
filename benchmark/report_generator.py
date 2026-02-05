@@ -67,12 +67,17 @@ class ReportGenerator:
         """Close database connection."""
         self.db.close()
 
-    def get_latest_runs(self, databases: Optional[List[str]] = None) -> List[RunData]:
+    def get_latest_runs(
+        self,
+        databases: Optional[List[str]] = None,
+        dataset: Optional[str] = None,
+    ) -> List[RunData]:
         """
-        Get the most recent run for each database.
+        Get the most recent run for each (database, dataset) pair.
 
         Args:
             databases: Optional list of database names to filter
+            dataset: Optional dataset name to filter (case-insensitive)
 
         Returns:
             List of RunData objects
@@ -80,22 +85,30 @@ class ReportGenerator:
         conn = self.db._get_connection()
         cursor = conn.cursor()
 
-        # Get latest run_id for each database
+        # Get latest run_id for each (database, dataset) pair
         query = """
             SELECT r.* FROM runs r
             INNER JOIN (
-                SELECT database, MAX(run_id) as max_id
+                SELECT database, dataset, MAX(run_id) as max_id
                 FROM runs
-                GROUP BY database
+                GROUP BY database, dataset
             ) latest ON r.run_id = latest.max_id
         """
 
+        conditions = []
+        params: list = []
         if databases:
             placeholders = ",".join("?" * len(databases))
-            query += f" WHERE r.database IN ({placeholders})"
-            cursor.execute(query, databases)
-        else:
-            cursor.execute(query)
+            conditions.append(f"r.database IN ({placeholders})")
+            params.extend(databases)
+        if dataset:
+            conditions.append("UPPER(r.dataset) = UPPER(?)")
+            params.append(dataset)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        cursor.execute(query, params)
 
         runs = []
         for row in cursor.fetchall():
@@ -103,6 +116,13 @@ class ReportGenerator:
             runs.append(run_data)
 
         return runs
+
+    def get_datasets(self) -> List[str]:
+        """Get distinct dataset names from the database."""
+        conn = self.db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT dataset FROM runs ORDER BY dataset")
+        return [row[0] for row in cursor.fetchall()]
 
     def get_runs_by_ids(self, run_ids: List[int]) -> List[RunData]:
         """
@@ -915,6 +935,7 @@ class ReportGenerator:
         format: str = "markdown",
         databases: Optional[List[str]] = None,
         run_ids: Optional[List[int]] = None,
+        dataset: Optional[str] = None,
     ) -> str:
         """
         Generate a benchmark report.
@@ -923,14 +944,17 @@ class ReportGenerator:
             format: Output format ('markdown' or 'html')
             databases: Optional list of database names to include
             run_ids: Optional list of specific run IDs to include
+            dataset: Optional dataset name to filter (case-insensitive)
 
         Returns:
             Report content as string
         """
         if run_ids:
             runs = self.get_runs_by_ids(run_ids)
+            if dataset:
+                runs = [r for r in runs if r.dataset.upper() == dataset.upper()]
         else:
-            runs = self.get_latest_runs(databases)
+            runs = self.get_latest_runs(databases, dataset=dataset)
 
         if not runs:
             return "No benchmark results found."

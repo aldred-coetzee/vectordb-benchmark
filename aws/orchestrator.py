@@ -211,11 +211,16 @@ def generate_and_upload_report(
         print("ERROR: Report generation failed")
         return False
 
-    # Upload report and merged DB to S3
-    uploads = [
-        (f"results/report-{run_id}.html", f"runs/{run_id}/report.html", "text/html"),
+    # Upload per-dataset reports and merged DB to S3
+    uploads: list[tuple[str, str, str]] = [
         (f"results/benchmark-{run_id}.db", f"runs/{run_id}/benchmark.db", "application/octet-stream"),
     ]
+
+    # Find all per-dataset report files (report-{run_id}-{dataset}.html)
+    import glob
+    for report_file in sorted(glob.glob(f"results/report-{run_id}-*.html")):
+        filename = Path(report_file).name
+        uploads.append((report_file, f"runs/{run_id}/{filename}", "text/html"))
 
     for local_path, s3_key, content_type in uploads:
         if Path(local_path).exists():
@@ -227,7 +232,7 @@ def generate_and_upload_report(
         else:
             print(f"  WARNING: {local_path} not found, skipping upload")
 
-    print(f"\nReport: s3://{S3_BUCKET}/runs/{run_id}/report.html")
+    print(f"\nReports: s3://{S3_BUCKET}/runs/{run_id}/")
     return True
 
 
