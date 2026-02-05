@@ -242,14 +242,17 @@ Two separate AMIs — orchestrator is lightweight, worker is heavy with datasets
 
 #### Orchestrator AMI
 
+`ami-09ed5dd071675cfef` (`vectordb-benchmark-orchestrator-v1`)
+
 ```
 Orchestrator AMI contains:
   /app/
     vectordb-benchmark/     - benchmark code (git pull at startup for latest)
-  Python 3.12 + boto3
+  Python 3.12.12 + boto3 1.42.42
   No Docker, no datasets
 ```
 
+- Base: Amazon Linux 2023 (`ami-0fcee47b1475c1af3`)
 - AMI size: ~3GB
 - AMI storage cost: ~$0.15/month
 - Purpose: Run `orchestrator.py` only — launch/monitor workers, aggregate results
@@ -429,7 +432,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [x] Create `aws/orchestrator_startup.sh` (runs orchestrator.py instead of single benchmark)
 - [x] Create Launch Template (`vectordb-benchmark-full`) for full benchmark runs
 - [x] Add `iam:PassRole` permission to IAM role (managed policy: `vectordb-benchmark-passrole`)
-- [ ] Build Orchestrator AMI (Python 3.12, boto3, git — no Docker/datasets)
+- [x] Build Orchestrator AMI: `ami-09ed5dd071675cfef` (`vectordb-benchmark-orchestrator-v1`)
 - [ ] Update Launch Template to use Orchestrator AMI
 - [ ] Add Name tags to worker instances in `orchestrator.py` (currently workers have no Name tag)
 - [ ] Run full benchmark suite (all 9 DBs on SIFT-1M and GIST-1M)
@@ -444,9 +447,8 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - HNSW efSearch=128: 381 QPS, 2.4ms p50 latency, 99.3% recall
 
 **Implementation Notes**:
-- boto3 not included in Worker AMI (was added to requirements.txt after AMI was built)
-  - Workaround: `orchestrator_startup.sh` installs boto3 at startup
-  - Fix: Orchestrator AMI will have boto3 pre-installed (separate AMI approach)
+- Orchestrator AMI has boto3 pre-installed (no startup workaround needed)
+- Worker AMI does NOT have boto3 (not needed — workers don't use boto3 directly, worker_startup.sh uses AWS CLI)
 - `orchestrator.py` Session handling: tries `profile_name="vectordb"` (local SSO), falls back to default (EC2 IAM role)
 
 ### Triggering Benchmarks
@@ -462,7 +464,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 One Launch Template: `vectordb-benchmark-full` (needs update after orchestrator AMI created)
 - Instance type: t3.small (orchestrator)
-- AMI: TBD (Orchestrator AMI — currently using Worker AMI ami-0f9bf04496aedd923)
+- AMI: `ami-09ed5dd071675cfef` (Orchestrator AMI)
 - IAM profile: vectordb-benchmark-role
 - User-data: fetches and runs `aws/orchestrator_startup.sh` from GitHub
 - Runs all 9 databases on sift + gist datasets
@@ -515,7 +517,7 @@ python aws/orchestrator.py
 2. ~~**Verify Worker End-to-End**~~ ✓ — First test completed, results in S3, auto-terminated
 3. ~~**Create Launch Template**~~ ✓ — `vectordb-benchmark-full` (version 6)
 4. ~~**Add IAM PassRole Permission**~~ ✓ — Managed policy `vectordb-benchmark-passrole` attached
-5. **Build Orchestrator AMI** — Launch base AL2023 instance, install Python 3.12 + boto3 + git, create AMI
+5. ~~**Build Orchestrator AMI**~~ ✓ — `ami-09ed5dd071675cfef` (Python 3.12, boto3, git, ~3GB)
 6. **Update Launch Template** — Point to new Orchestrator AMI instead of Worker AMI
 7. **Fix Worker Name Tags** — Update `orchestrator.py` to add Name tag when launching workers
 8. **Test Full Orchestrator Flow** — Verify end-to-end with IAM fix + new AMI
