@@ -226,7 +226,7 @@ class KDBAIClient(BaseVectorDBClient):
         index_name = search_config.index_name
 
         # Build search parameters
-        search_vectors = {index_name: [query_vector.tolist()]}
+        search_vectors = {index_name: [query_vector.astype(np.float32)]}
 
         # Build index params based on index type
         if search_config.index_type == "hnsw":
