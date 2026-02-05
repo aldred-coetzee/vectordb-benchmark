@@ -411,7 +411,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 **Other Resources** (created):
 - [x] Key pair: `vectordb-benchmark` (stored at `~/.ssh/vectordb-benchmark.pem`)
 - [x] S3 bucket: `vectordb-benchmark-590780615264` (us-west-2)
-- [x] IAM role: `vectordb-benchmark-role` (EC2 trust, AmazonS3FullAccess attached)
+- [x] IAM role: `vectordb-benchmark-role` (EC2 trust, AmazonS3FullAccess + vectordb-benchmark-passrole attached)
 - [x] S3 config files: `config/kc.lic` (KDB.AI license), `config/docker-config.json` (KDB.AI registry creds)
 
 **Completed**:
@@ -428,7 +428,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 **Still TODO**:
 - [x] Create `aws/orchestrator_startup.sh` (runs orchestrator.py instead of single benchmark)
 - [x] Create Launch Template (`vectordb-benchmark-full`) for full benchmark runs
-- [ ] **BLOCKED**: Add `iam:PassRole` permission to IAM role (required for orchestrator to launch workers with IAM profiles)
+- [x] Add `iam:PassRole` permission to IAM role (managed policy: `vectordb-benchmark-passrole`)
 - [ ] Build Orchestrator AMI (Python 3.12, boto3, git — no Docker/datasets)
 - [ ] Update Launch Template to use Orchestrator AMI
 - [ ] Add Name tags to worker instances in `orchestrator.py` (currently workers have no Name tag)
@@ -482,7 +482,7 @@ One Launch Template: `vectordb-benchmark-full` (needs update after orchestrator 
 4. Orchestrator monitors, then auto-terminates
 5. Results in `s3://vectordb-benchmark-590780615264/runs/{run-id}/`
 
-**Current Blocker**: IAM role needs `iam:PassRole` permission to launch workers with IAM profiles.
+**IAM PassRole**: ✓ Resolved — managed policy `vectordb-benchmark-passrole` attached to role.
 
 #### Method 2: CLI (Custom Runs)
 
@@ -514,7 +514,7 @@ python aws/orchestrator.py
 1. ~~**Build Orchestrator**~~ ✓ — Created `aws/worker_startup.sh` and `aws/orchestrator.py`
 2. ~~**Verify Worker End-to-End**~~ ✓ — First test completed, results in S3, auto-terminated
 3. ~~**Create Launch Template**~~ ✓ — `vectordb-benchmark-full` (version 6)
-4. **Add IAM PassRole Permission** — Add `iam:PassRole` to `vectordb-benchmark-role` (manual, AWS Console)
+4. ~~**Add IAM PassRole Permission**~~ ✓ — Managed policy `vectordb-benchmark-passrole` attached
 5. **Build Orchestrator AMI** — Launch base AL2023 instance, install Python 3.12 + boto3 + git, create AMI
 6. **Update Launch Template** — Point to new Orchestrator AMI instead of Worker AMI
 7. **Fix Worker Name Tags** — Update `orchestrator.py` to add Name tag when launching workers
