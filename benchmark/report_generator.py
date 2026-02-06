@@ -1747,21 +1747,41 @@ class ComparisonReportGenerator:
             n_datasets = len(set(r.dataset for r in runs))
             n_jobs = len(set((r.database, r.dataset) for r in runs))
             n_hosts = len(hostnames)
-            instance_type = aws_info.get("instance_type", "N/A")
+
+            # Worker specs from actual run data (exclude embedded DBs with 0 cpus)
+            worker_runs = [r for r in runs if r.cpus and r.cpus > 0]
+            if worker_runs:
+                worker_vcpus = int(max(r.cpus for r in worker_runs))
+                worker_mem_raw = max(r.memory_gb for r in worker_runs)
+                worker_mem = int(worker_mem_raw) if worker_mem_raw == int(worker_mem_raw) else worker_mem_raw
+            else:
+                worker_vcpus = aws_info.get("worker", {}).get("vcpus", "N/A")
+                worker_mem = aws_info.get("worker", {}).get("memory_gb", "N/A")
+            worker_type = aws_info.get("worker", {}).get("instance_type", "N/A")
+
+            # Orchestrator from config (not in results DB — it doesn't run benchmarks)
+            orch = aws_info.get("orchestrator", {})
+            orch_type = orch.get("instance_type", "N/A")
+            orch_role = orch.get("role", "")
 
             lines.append("<h3>Test Environment</h3>")
             lines.append(f'''<div class="table-wrap"><table>
+            <thead><tr><th></th><th>Orchestrator</th><th>Worker</th></tr></thead>
             <tbody>
-            <tr><td><strong>Platform</strong></td><td>AWS EC2 ({aws_info.get("region", "N/A")})</td></tr>
-            <tr><td><strong>Instance Type</strong></td><td>{instance_type}</td></tr>
-            <tr><td><strong>vCPUs</strong></td><td>{aws_info.get("vcpus", "N/A")}</td></tr>
-            <tr><td><strong>Memory</strong></td><td>{aws_info.get("memory_gb", "N/A")} GB</td></tr>
-            <tr><td><strong>OS</strong></td><td>{aws_info.get("os", "N/A")}</td></tr>
-            <tr><td><strong>Isolation</strong></td><td>Dedicated instance per job &mdash; one database &times; one dataset per worker</td></tr>
+            <tr><td><strong>Role</strong></td><td>Job coordination &amp; reporting</td><td>Run one benchmark (database + dataset)</td></tr>
+            <tr><td><strong>Instance Type</strong></td><td>{orch_type}</td><td>{worker_type}</td></tr>
+            <tr><td><strong>vCPUs</strong></td><td>{orch.get("vcpus", "N/A")}</td><td>{worker_vcpus}</td></tr>
+            <tr><td><strong>Memory</strong></td><td>{orch.get("memory_gb", "N/A")} GB</td><td>{worker_mem} GB</td></tr>
+            <tr><td><strong>Count</strong></td><td>1</td><td>{n_hosts} (one per job)</td></tr>
+            <tr><td><strong>OS</strong></td><td colspan="2">{aws_info.get("os", "N/A")}</td></tr>
+            <tr><td><strong>Region</strong></td><td colspan="2">{aws_info.get("region", "N/A")}</td></tr>
             </tbody></table></div>''')
+            if orch_role:
+                lines.append(
+                    f'<p class="note"><strong>Orchestrator:</strong> {orch_role}</p>')
             lines.append(
-                f'<p class="note">{n_dbs} databases &times; {n_datasets} datasets = {n_jobs} jobs, '
-                f'each running on its own {instance_type} instance ({n_hosts} unique workers). '
+                f'<p class="note"><strong>Workers:</strong> {n_dbs} databases &times; {n_datasets} datasets = {n_jobs} jobs, '
+                f'each running on a dedicated {worker_type} ({worker_vcpus} vCPU, {worker_mem} GB). '
                 f'No two benchmarks share CPU, memory, or I/O. '
                 f'Embedded databases (FAISS) run in-process on the same instance type.</p>'
             )

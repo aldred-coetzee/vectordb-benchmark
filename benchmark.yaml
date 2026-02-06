@@ -160,7 +160,11 @@ infrastructure:
   repo: "https://github.com/aldred-coetzee/vectordb-benchmark"
   aws:
     region: us-west-2
-    instance_type: m5.4xlarge
-    vcpus: 16
-    memory_gb: 64
     os: "Amazon Linux 2023"
+    orchestrator:
+      instance_type: t3.small
+      vcpus: 2
+      memory_gb: 2
+      role: "Launches worker instances, monitors progress via S3 heartbeats, aggregates results, generates report. Does not run any benchmarks."
+    worker:
+      instance_type: m5.4xlarge
