@@ -499,7 +499,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [x] Created `aws/worker_startup.sh` with auto-termination, S3 result upload, credential fetching
 - [x] Created `aws/orchestrator.py` for launching and monitoring worker instances
 - [x] Created `aws/orchestrator_startup.sh` with tag-based config, self-tagging
-- [x] Launch Template v10 (`vectordb-benchmark-full`) with orchestrator AMI
+- [x] Launch Template v13 (`vectordb-benchmark-full`) with orchestrator AMI, BenchmarkType + PullLatest tags
 - [x] IAM policies: PassRole + EC2 permissions
 - [x] Worker auto-termination (trap on exit + scheduled shutdown)
 - [x] Orchestrator self-tags with run ID
@@ -590,33 +590,34 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 | Method | Use Case | How |
 |--------|----------|-----|
-| **Launch Template** | Full benchmark (all 9 DBs) | EC2 Console → Launch Template → Launch |
+| **Launch Template** | Full benchmark (7 DBs × 4 datasets) | EC2 Console → Launch Template → Launch |
 | **CLI from laptop** | Custom runs (subset of DBs, new releases) | `python aws/orchestrator.py --databases ...` |
 
 #### Method 1: Launch Template (Full Run)
 
-One Launch Template: `vectordb-benchmark-full` (version 12)
+One Launch Template: `vectordb-benchmark-full` (version 13)
 - Instance type: t3.small (orchestrator)
 - AMI: `ami-09ed5dd071675cfef` (Orchestrator AMI)
 - IAM profile: vectordb-benchmark-role
 - Instance tags: Name=`vectordb-orchestrator`, Owner=`acoetzee`, Project=`vectordb-benchmark`
 - User-data: `git pull` then runs local `aws/orchestrator_startup.sh`
 - Orchestrator self-tags with run ID after startup
-- Defaults to all databases × all datasets (from `DATABASES`/`DATASETS` in `orchestrator.py`)
+- Defaults to 7 DBs × 4 datasets = 28 jobs (pgvector/lancedb excluded)
 - Fire and forget - just launch and check S3 later
 
 **Configuration via Instance Tags** (pre-filled in template, editable at launch):
 | Tag | Default | Description |
 |-----|---------|-------------|
-| `Databases` | all (from `DATABASES` in orchestrator.py) | Comma-separated list — remove entries to run a subset |
-| `Datasets` | all (from `DATASETS` in orchestrator.py) | Comma-separated list — remove entries to run a subset |
+| `Databases` | `faiss,qdrant,milvus,redis,chroma,weaviate,kdbai` | Comma-separated list — remove entries to run a subset |
+| `Datasets` | `sift,gist,glove-100,dbpedia-openai` | Comma-separated list — remove entries to run a subset |
 | `BenchmarkType` | `competitive` | S3 organization: `competitive`, `kdbai-tuning`, etc. |
+| `PullLatest` | `all` | Pull fresh Docker images at startup (`all`, comma-separated list, or delete tag to skip) |
 
-Tags are pre-filled with all values. To run a subset, just delete entries at launch time. `PullLatest` can be added manually when needed (see Future Enhancements).
+Tags are pre-filled with all values. To run a subset, delete entries at launch time. pgvector and lancedb can be added back to `Databases` if needed (pgvector is slow on high-dim; lancedb has no supported indexes).
 
 **Flow**:
 1. EC2 Console → Launch Templates → `vectordb-benchmark-full` → Launch
-2. Edit `Databases` / `Datasets` tags if you want a subset (optional)
+2. Edit tags if you want a subset (optional)
 3. Orchestrator instance launches workers via API
 4. Workers run benchmarks, upload to S3, auto-terminate
 5. Orchestrator monitors, then auto-terminates
@@ -657,16 +658,16 @@ python aws/orchestrator.py --no-wait
 
 1. ~~**Build Orchestrator**~~ ✓
 2. ~~**Verify Worker End-to-End**~~ ✓
-3. ~~**Create Launch Template**~~ ✓ — version 10
+3. ~~**Create Launch Template**~~ ✓ — version 13 (BenchmarkType, PullLatest tags; pgvector/lancedb excluded)
 4. ~~**Add IAM Permissions**~~ ✓ — PassRole + EC2 policies
 5. ~~**Build Orchestrator AMI**~~ ✓ — `ami-09ed5dd071675cfef`
 6. ~~**Update Launch Template**~~ ✓ — Orchestrator AMI + tags + git-based user-data
 7. ~~**Fix Worker Name Tags**~~ ✓
 8. ~~**Test Full Orchestrator Flow**~~ ✓ — Minimal test passed
 9. ~~**Fix Benchmark Code Bugs**~~ ✓ — All 9 bugs fixed, all 9 DBs pass on sift-dev
-10. **Run Clean Full Benchmark** — All 9 DBs × sift + gist (run 2026-02-05-1047 in progress but uses old code/instance type)
+10. **Run Clean Full Benchmark** — 7 DBs × 4 datasets (28 jobs) via Launch Template v13
 11. **Generate Comparison Report** — From S3 results
-12. **Later Enhancements** — SIFT-10M (.bvecs), `run_aws.py` CLI, Web UI, `PullLatest` Launch Template tag (pull fresh Docker images at worker startup — useful for benchmarking new DB releases)
+12. **Later Enhancements** — SIFT-10M (.bvecs), `run_aws.py` CLI, Web UI
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
