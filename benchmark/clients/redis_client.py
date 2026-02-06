@@ -71,6 +71,14 @@ class RedisClient(BaseVectorDBClient):
         except Exception:
             return "unknown"
 
+    def get_client_version(self) -> str:
+        """Return redis-py Python SDK version."""
+        try:
+            import importlib.metadata
+            return importlib.metadata.version("redis")
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from Redis."""
         self._index_configs.clear()

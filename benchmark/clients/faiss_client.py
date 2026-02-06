@@ -46,6 +46,10 @@ class FAISSClient(BaseVectorDBClient):
             except Exception:
                 return "unknown"
 
+    def get_client_version(self) -> str:
+        """Return FAISS library version (embedded — same as server)."""
+        return self.get_version()
+
     def connect(self, **kwargs) -> None:
         """
         Connect to FAISS (no-op since FAISS runs in-process).

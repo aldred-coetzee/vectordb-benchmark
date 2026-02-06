@@ -73,6 +73,14 @@ class ChromaClient(BaseVectorDBClient):
         except Exception:
             return "unknown"
 
+    def get_client_version(self) -> str:
+        """Return chromadb Python SDK version."""
+        try:
+            import importlib.metadata
+            return importlib.metadata.version("chromadb")
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from ChromaDB."""
         self._collections.clear()

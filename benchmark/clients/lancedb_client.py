@@ -56,6 +56,10 @@ class LanceDBClient(BaseVectorDBClient):
             except Exception:
                 return "unknown"
 
+    def get_client_version(self) -> str:
+        """Return LanceDB library version (embedded — same as server)."""
+        return self.get_version()
+
     def connect(self, endpoint: str = "./data/lancedb", **kwargs) -> None:
         """
         Connect to LanceDB (creates/opens a local database).

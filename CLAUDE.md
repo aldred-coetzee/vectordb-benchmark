@@ -549,6 +549,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Chroma efSearch fix**: `collection.modify(metadata={"hnsw:search_ef": ef})` does NOT work in ChromaDB 1.x — only updates metadata dict, not the actual hnswlib index. Correct API: `collection.modify(configuration={"hnsw": {"ef_search": ef}})`. Previous runs had ef stuck at 64 (creation default), producing identical recall at ef=128 and ef=256.
 - **KDB.AI recall fix**: Set `mmapLevel=0` on `qHnsw` to force fully in-memory operation. Default mmapLevel=1 memory-maps vectors to disk, degrading recall. Keeps `qHnsw`/`qFlat` (not `hnsw`/`flat`) to retain multi-threaded insert via THREADS env var. Also fixed `get_version()` to return server version (1.8.2) instead of client library version (1.8.0).
 - **Qdrant version fix**: Made `get_version()` more robust with HTTP fallback when gRPC-preferred client can't access REST service API. Config `version` changed from `"latest"` to null (auto-detected). Now correctly reports 1.16.3.
+- **Client + server versions in report**: Database Configuration table now shows both "Server Version" and "Client Version" columns. All 9 clients implement `get_client_version()` returning their Python SDK version via `importlib.metadata`. Stored in new `db_client_version` column in SQLite `runs` table (backward-compatible migration).
 
 **Run 2026-02-05-1816** (6 DBs × sift + gist, excludes pgvector + LanceDB):
 - 12/16 jobs completed with data. Qdrant empty (bugs #12-14, fixed). LanceDB skipped (expected).

@@ -80,6 +80,14 @@ class MilvusClient(BaseVectorDBClient):
         except Exception:
             return "unknown"
 
+    def get_client_version(self) -> str:
+        """Return pymilvus Python SDK version."""
+        try:
+            import importlib.metadata
+            return importlib.metadata.version("pymilvus")
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from Milvus."""
         self._index_configs.clear()

@@ -40,6 +40,7 @@ class RunData:
     run_id: int
     database: str
     db_version: Optional[str]
+    db_client_version: Optional[str]
     dataset: str
     vector_count: int
     dimensions: int
@@ -198,6 +199,7 @@ class ReportGenerator:
             run_id=run_id,
             database=database,
             db_version=row.get("db_version"),
+            db_client_version=row.get("db_client_version"),
             dataset=row.get("dataset", "unknown"),
             vector_count=row.get("vector_count", 0),
             dimensions=row.get("dimensions", 0),
@@ -434,12 +436,13 @@ class ReportGenerator:
         # Database Configuration Summary
         lines.append("## Database Configuration Summary")
         lines.append("")
-        lines.append("| Database | Version | Architecture | Protocol | Persistence | License |")
-        lines.append("|----------|---------|--------------|----------|-------------|---------|")
+        lines.append("| Database | Server Version | Client Version | Architecture | Protocol | Persistence | License |")
+        lines.append("|----------|----------------|----------------|--------------|----------|-------------|---------|")
         for run in sorted(runs, key=lambda r: r.database):
             meta = run.metadata
             lines.append(
                 f"| {run.database} | {run.db_version or 'N/A'} | "
+                f"{run.db_client_version or 'N/A'} | "
                 f"{meta.get('architecture', 'N/A')} | {meta.get('protocol', 'N/A')} | "
                 f"{meta.get('persistence', 'N/A')} | {meta.get('license', 'N/A')} |"
             )
@@ -1863,6 +1866,7 @@ class ComparisonReportGenerator:
                                 if persistence == "memory" else persistence)
             db_rows += (
                 f"<tr><td>{sample.database}</td><td>{sample.db_version or 'N/A'}</td>"
+                f"<td>{sample.db_client_version or 'N/A'}</td>"
                 f"<td>{meta.get('architecture', 'N/A')}</td>"
                 f"<td>{meta.get('protocol', 'N/A')}</td>"
                 f"<td>{persistence_html}</td>"
@@ -1870,7 +1874,7 @@ class ComparisonReportGenerator:
             )
 
         lines.append(f'''<div class="table-wrap"><table>
-        <thead><tr><th>Database</th><th>Version</th><th>Architecture</th><th>Protocol</th><th>Persistence</th><th>License</th></tr></thead>
+        <thead><tr><th>Database</th><th>Server Version</th><th>Client Version</th><th>Architecture</th><th>Protocol</th><th>Persistence</th><th>License</th></tr></thead>
         <tbody>{db_rows}</tbody></table></div>''')
 
         # Docker launch commands (client-server databases only)

@@ -96,6 +96,14 @@ class QdrantClient(BaseVectorDBClient):
         except Exception:
             return "unknown"
 
+    def get_client_version(self) -> str:
+        """Return qdrant-client Python SDK version."""
+        try:
+            import importlib.metadata
+            return importlib.metadata.version("qdrant-client")
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from Qdrant."""
         self._index_configs.clear()

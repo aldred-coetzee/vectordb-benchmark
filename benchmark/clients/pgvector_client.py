@@ -108,6 +108,14 @@ class PGVectorClient(BaseVectorDBClient):
         except Exception:
             return "unknown"
 
+    def get_client_version(self) -> str:
+        """Return psycopg2 Python SDK version."""
+        try:
+            import importlib.metadata
+            return importlib.metadata.version("psycopg2-binary")
+        except Exception:
+            return "unknown"
+
     def disconnect(self) -> None:
         """Disconnect from PostgreSQL."""
         self._index_configs.clear()

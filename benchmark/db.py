@@ -79,6 +79,10 @@ class BenchmarkDatabase:
             cursor.execute("ALTER TABLE runs ADD COLUMN instance_type TEXT")
         except sqlite3.OperationalError:
             pass  # Column already exists
+        try:
+            cursor.execute("ALTER TABLE runs ADD COLUMN db_client_version TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
         # Create ingest_results table
         cursor.execute("""
@@ -204,6 +208,7 @@ class BenchmarkDatabase:
         vector_count: int,
         dimensions: int,
         db_version: Optional[str] = None,
+        db_client_version: Optional[str] = None,
         cpus: Optional[float] = None,
         memory_gb: Optional[float] = None,
         config: Optional[Dict[str, Any]] = None,
@@ -243,14 +248,14 @@ class BenchmarkDatabase:
 
         cursor.execute("""
             INSERT INTO runs (
-                timestamp, start_time, database, db_version, dataset, vector_count,
-                dimensions, cpus, memory_gb, config_json, benchmark_config_json,
-                hostname, notes, instance_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                timestamp, start_time, database, db_version, db_client_version,
+                dataset, vector_count, dimensions, cpus, memory_gb,
+                config_json, benchmark_config_json, hostname, notes, instance_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            timestamp, start_time, database, db_version, dataset, vector_count,
-            dimensions, cpus, memory_gb, config_json, benchmark_config_json,
-            hostname, notes, instance_type
+            timestamp, start_time, database, db_version, db_client_version,
+            dataset, vector_count, dimensions, cpus, memory_gb,
+            config_json, benchmark_config_json, hostname, notes, instance_type
         ))
 
         conn.commit()
@@ -404,6 +409,7 @@ class BenchmarkDatabase:
         batch_size: Optional[int] = None,
         num_queries: Optional[int] = None,
         db_version: Optional[str] = None,
+        db_client_version: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
         duration_seconds: Optional[float] = None,
@@ -434,6 +440,7 @@ class BenchmarkDatabase:
             vector_count=dataset_info.get("num_base_vectors", 0),
             dimensions=dataset_info.get("dimensions", 0),
             db_version=db_version,
+            db_client_version=db_client_version,
             cpus=results.docker_cpu_limit,
             memory_gb=results.docker_memory_limit_gb,
             config=config,

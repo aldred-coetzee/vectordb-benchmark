@@ -295,6 +295,11 @@ def run_with_config(
             db_version = detected_version
             print(f"  Detected version: {db_version}")
 
+        # Detect client library version
+        db_client_version = client.get_client_version()
+        if db_client_version and db_client_version != "unknown":
+            print(f"  Client library: {db_client_version}")
+
         # Filter indexes by what the client supports
         supported = get_supported_indexes(client)
         indexes_to_run = filter_indexes(requested_indexes, supported, database_name)
@@ -410,6 +415,7 @@ def run_with_config(
                     batch_size=batch_size,
                     num_queries=num_queries,
                     db_version=db_version,
+                    db_client_version=db_client_version,
                     start_time=start_time_iso,
                     end_time=end_time_iso,
                     duration_seconds=duration_seconds,

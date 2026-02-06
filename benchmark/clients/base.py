@@ -172,6 +172,14 @@ class BaseVectorDBClient(ABC):
         """
         return "unknown"
 
+    def get_client_version(self) -> str:
+        """Return the version of the client library used to connect.
+
+        For embedded databases, this is the same as get_version().
+        For client-server databases, this is the Python SDK version.
+        """
+        return "unknown"
+
     @property
     def has_batch_search(self) -> bool:
         """Whether this client supports native batch search."""
