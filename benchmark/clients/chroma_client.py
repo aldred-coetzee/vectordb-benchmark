@@ -28,6 +28,7 @@ class ChromaClient(BaseVectorDBClient):
         self._client: Optional[Any] = None
         self._collections: Dict[str, Any] = {}
         self._index_configs: Dict[str, IndexConfig] = {}
+        self._current_ef_search: Optional[int] = None
 
     @property
     def name(self) -> str:
@@ -85,6 +86,7 @@ class ChromaClient(BaseVectorDBClient):
         """Disconnect from ChromaDB."""
         self._collections.clear()
         self._index_configs.clear()
+        self._current_ef_search = None
         self._client = None
         print("Disconnected from ChromaDB")
 
@@ -228,13 +230,15 @@ class ChromaClient(BaseVectorDBClient):
 
         collection = self._collections[table_name]
 
-        # Update search_ef if HNSW
+        # Update search_ef if HNSW (only when value changes — avoid per-query network call)
         if search_config.index_type == "hnsw":
             ef_search = search_config.params.get("efSearch", 64)
-            try:
-                collection.modify(configuration={"hnsw": {"ef_search": ef_search}})
-            except Exception:
-                pass  # May fail if collection doesn't support modification
+            if ef_search != self._current_ef_search:
+                try:
+                    collection.modify(configuration={"hnsw": {"ef_search": ef_search}})
+                    self._current_ef_search = ef_search
+                except Exception:
+                    pass  # May fail if collection doesn't support modification
 
         start_time = time.perf_counter()
 
@@ -284,13 +288,15 @@ class ChromaClient(BaseVectorDBClient):
 
         collection = self._collections[table_name]
 
-        # Update search_ef if HNSW
+        # Update search_ef if HNSW (only when value changes)
         if search_config.index_type == "hnsw":
             ef_search = search_config.params.get("efSearch", 64)
-            try:
-                collection.modify(configuration={"hnsw": {"ef_search": ef_search}})
-            except Exception:
-                pass
+            if ef_search != self._current_ef_search:
+                try:
+                    collection.modify(configuration={"hnsw": {"ef_search": ef_search}})
+                    self._current_ef_search = ef_search
+                except Exception:
+                    pass
 
         try:
             start_time = time.perf_counter()

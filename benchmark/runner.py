@@ -32,6 +32,8 @@ class BenchmarkRunner:
         batch_size: int = 50000,
         warmup_queries: int = 100,
         k_values: Optional[List[int]] = None,
+        docker_manager: Optional[Any] = None,
+        cold_restart: bool = False,
     ):
         """
         Initialize the benchmark runner.
@@ -43,6 +45,8 @@ class BenchmarkRunner:
             batch_size: Number of vectors per insertion batch
             warmup_queries: Number of warmup queries before timing
             k_values: List of k values for recall calculation (default: [10, 100])
+            docker_manager: Optional DockerManager for container restart (--cold mode)
+            cold_restart: If True, restart container between efSearch values
         """
         self.client = client
         self.dataset = dataset
@@ -50,6 +54,9 @@ class BenchmarkRunner:
         self.batch_size = batch_size
         self.warmup_queries = warmup_queries
         self.k_values = k_values if k_values is not None else [10, 100]
+        self.docker_manager = docker_manager
+        self.cold_restart = cold_restart
+        self._connect_kwargs: Dict[str, Any] = {}
 
     def run_ingest_benchmark(
         self,
@@ -137,6 +144,26 @@ class BenchmarkRunner:
 
         return result
 
+    def _warm_cache(self, table_name: str, search_config: SearchConfig) -> None:
+        """Run untimed queries to warm HNSW graph into OS/DB caches before efSearch sweep."""
+        queries = self.dataset.query_vectors
+        k = max(self.k_values)
+        warm_count = min(1000, len(queries))
+        print(f"\n    Warming cache with {warm_count} queries...")
+        for i in range(warm_count):
+            self.client.search(table_name, queries[i], k, search_config)
+
+    def _restart_container(self) -> None:
+        """Restart DB container for cold-cache measurement between efSearch values."""
+        if not self.docker_manager:
+            return
+        print("    Restarting container for cold-cache measurement...")
+        self.docker_manager.stop_container()
+        self.docker_manager.start_container()
+        if not self.docker_manager.wait_for_ready():
+            raise RuntimeError("Container failed to become ready after restart")
+        self.client.connect(**self._connect_kwargs)
+
     def run_search_benchmark(
         self,
         table_name: str,
@@ -172,31 +199,46 @@ class BenchmarkRunner:
                 f"query vector count ({num_queries})"
             )
 
-        # Warmup queries
-        print(f"    Running {self.warmup_queries} warmup queries...")
-        for i in range(min(self.warmup_queries, num_queries)):
+        # Scaled warmup: max(config value, 10% of queries) to reduce cold-cache noise
+        warmup_count = min(max(self.warmup_queries, num_queries // 10), num_queries)
+        print(f"    Running {warmup_count} warmup queries...")
+        for i in range(warmup_count):
             self.client.search(table_name, queries[i], k, search_config)
+
+        # Pad queries for QPS stability on small query sets (e.g., GIST has only 1K)
+        MIN_QUERIES_FOR_QPS = 5000
+        if num_queries < MIN_QUERIES_FOR_QPS:
+            repeat_factor = (MIN_QUERIES_FOR_QPS + num_queries - 1) // num_queries
+            qps_queries = np.tile(queries, (repeat_factor, 1))[:MIN_QUERIES_FOR_QPS]
+            np.random.default_rng(42).shuffle(qps_queries)
+            qps_num_queries = MIN_QUERIES_FOR_QPS
+            print(f"    Padded {num_queries:,} queries to {qps_num_queries:,} for QPS measurement")
+        else:
+            qps_queries = queries
+            qps_num_queries = num_queries
 
         # Start monitoring
         if self.monitor:
             self.monitor.start_monitoring(interval_seconds=0.1)
 
-        # Run timed queries
-        print(f"    Running {num_queries:,} timed queries...")
+        # Run timed queries — collect recall IDs only for original queries
+        print(f"    Running {qps_num_queries:,} timed queries...")
         latencies_ms = []
         all_retrieved_ids = []
 
         start_time = time.perf_counter()
 
-        for i in range(num_queries):
-            result = self.client.search(table_name, queries[i], k, search_config)
+        for i in range(qps_num_queries):
+            result = self.client.search(table_name, qps_queries[i], k, search_config)
             latencies_ms.append(result.latency_ms)
-            all_retrieved_ids.append(result.ids)
+            # Only collect results for original queries (for recall calculation)
+            if i < num_queries:
+                all_retrieved_ids.append(result.ids)
 
             if (i + 1) % SEARCH_PROGRESS_INTERVAL == 0:
                 elapsed = time.perf_counter() - start_time
                 current_qps = (i + 1) / elapsed
-                print(f"      Progress: {i + 1:,}/{num_queries:,} ({current_qps:,.0f} QPS)")
+                print(f"      Progress: {i + 1:,}/{qps_num_queries:,} ({current_qps:,.0f} QPS)")
 
         end_time = time.perf_counter()
         total_time = end_time - start_time
@@ -206,8 +248,8 @@ class BenchmarkRunner:
         if self.monitor:
             monitor_result = self.monitor.stop_monitoring()
 
-        # Calculate metrics
-        qps = calculate_qps(num_queries, total_time)
+        # Calculate metrics — QPS from all queries (including padding), latency from all
+        qps = calculate_qps(qps_num_queries, total_time)
         percentiles = calculate_latency_percentiles(latencies_ms)
 
         # Normalize results to exactly k elements per query
@@ -453,11 +495,26 @@ class BenchmarkRunner:
             # Test different efSearch values
             print("\n  Testing different efSearch values...")
             k = max(self.k_values)
+
+            # Pre-sweep cache warming (skip if --cold — container restart gives fresh cache)
+            first_ef = next((ef for ef in hnsw_ef_search_values if ef >= k), None)
+            if first_ef and not self.cold_restart:
+                warm_config = SearchConfig(
+                    index_name="hnsw_index",
+                    index_type="hnsw",
+                    params={"efSearch": first_ef},
+                )
+                self._warm_cache("benchmark_hnsw", warm_config)
+
             for ef_search in hnsw_ef_search_values:
                 # Skip efSearch values less than k (required by some databases like Milvus)
                 if ef_search < k:
                     print(f"  Skipping efSearch={ef_search} (must be >= k={k})")
                     continue
+
+                if self.cold_restart:
+                    self._restart_container()
+
                 hnsw_search_config = SearchConfig(
                     index_name="hnsw_index",
                     index_type="hnsw",
@@ -585,10 +642,24 @@ class BenchmarkRunner:
 
             # Sweep efSearch x indexOnly
             k = max(self.k_values)
+
+            # Pre-sweep cache warming (skip if --cold)
+            first_ef = next((ef for ef in ef_search_values if ef >= k), None)
+            if first_ef and not self.cold_restart:
+                warm_config = SearchConfig(
+                    index_name="hnsw_index",
+                    index_type="hnsw",
+                    params={"efSearch": first_ef},
+                )
+                self._warm_cache(table_name, warm_config)
+
             for ef_search in ef_search_values:
                 if ef_search < k:
                     print(f"  Skipping efSearch={ef_search} (must be >= k={k})")
                     continue
+
+                if self.cold_restart:
+                    self._restart_container()
 
                 for index_only in index_only_values:
                     search_params: Dict[str, Any] = {"efSearch": ef_search}

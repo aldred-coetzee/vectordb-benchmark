@@ -213,6 +213,7 @@ def run_with_config(
     hnsw_m_override: Optional[int] = None,
     hnsw_efc_override: Optional[int] = None,
     docker_config_name: Optional[str] = None,
+    cold_restart: bool = False,
 ) -> None:
     """
     Run benchmark using YAML configuration.
@@ -230,6 +231,7 @@ def run_with_config(
         hnsw_m_override: If set, filter tuning configs to this M value only
         hnsw_efc_override: If set, filter tuning configs to this efConstruction only
         docker_config_name: Name of docker config for index_type naming
+        cold_restart: If True, restart container between efSearch values
     """
     import time
     from datetime import datetime
@@ -437,7 +439,13 @@ def run_with_config(
                     client, dataset, monitor,
                     batch_size=batch_size,
                     warmup_queries=warmup_queries,
+                    docker_manager=docker_manager if cold_restart else None,
+                    cold_restart=cold_restart,
                 )
+
+                # Store connection kwargs so _restart_container() can reconnect
+                if cold_restart:
+                    runner._connect_kwargs = {"endpoint": endpoint, **connect_params} if endpoint else {**connect_params}
 
                 if tuning_config:
                     # Tuning mode: sweep HNSW configs from tuning YAML
@@ -807,6 +815,11 @@ Examples:
         action="store_true",
         help="Don't stop container after benchmark (useful for debugging)",
     )
+    docker_group.add_argument(
+        "--cold",
+        action="store_true",
+        help="Restart container between efSearch values for cache-isolated QPS measurement",
+    )
 
     args = parser.parse_args()
 
@@ -860,6 +873,8 @@ Examples:
         print(f"Output:          {args.output}")
         print(f"Skip Docker:     {args.skip_docker}")
         print(f"Keep container:  {args.keep_container}")
+        if args.cold:
+            print(f"Cold restart:    True (container restart between efSearch values)")
         print("=" * 80)
 
         run_with_config(
@@ -875,6 +890,7 @@ Examples:
             hnsw_m_override=args.hnsw_m,
             hnsw_efc_override=args.hnsw_efc,
             docker_config_name=args.docker_config_name,
+            cold_restart=args.cold,
         )
 
     elif args.database:
