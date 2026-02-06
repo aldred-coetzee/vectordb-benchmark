@@ -81,8 +81,8 @@ indexes:
 
   hnsw:
     description: "Hierarchical Navigable Small World graph — the dominant approximate nearest neighbor (ANN) index. Builds a multi-layer proximity graph at ingest time, then traverses it at search time. Trades recall for speed: higher efSearch improves recall but reduces QPS."
-    M: 48
-    efConstruction: 200
+    M: 16
+    efConstruction: 64
     efSearch:
       - 128
       - 256
@@ -166,11 +166,11 @@ metrics:
 
   m_parameter:
     name: "M (HNSW)"
-    description: "Maximum number of edges per node in the HNSW graph. Fixed at M=48 across all databases for fair comparison. Higher M improves recall and increases memory usage."
+    description: "Maximum number of edges per node in the HNSW graph. Fixed at M=16 across all databases for fair comparison — matches the most common production default. Higher M improves recall and increases memory usage."
 
   ef_construction:
     name: "efConstruction (HNSW)"
-    description: "Beam width used during HNSW graph construction. Fixed at 200 across all databases. Higher values build a better quality graph at the cost of slower ingest."
+    description: "Beam width used during HNSW graph construction. Fixed at 64 across all databases. Higher values build a better quality graph at the cost of slower ingest."
 
 # =============================================================================
 # Infrastructure

@@ -432,8 +432,8 @@ def run_with_config(
             # Prepare index configs
             hnsw_config = indexes_config.get("hnsw", {})
             ef_search_values = hnsw_config.get("efSearch", [128, 256, 512])
-            hnsw_m = hnsw_config.get("M", 48)
-            hnsw_ef_construction = hnsw_config.get("efConstruction", 200)
+            hnsw_m = hnsw_config.get("M", 16)
+            hnsw_ef_construction = hnsw_config.get("efConstruction", 64)
 
             # Run benchmark
             try:
