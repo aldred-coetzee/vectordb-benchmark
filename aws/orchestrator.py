@@ -35,7 +35,7 @@ KEY_NAME = "vectordb-benchmark"
 # lancedb excluded: no supported index types). Both can still be run explicitly via --databases.
 DATABASES = [
     "qdrant", "milvus", "weaviate", "chroma",
-    "redis", "kdbai", "faiss",
+    "redis", "kdbai", "kdbai-faiss", "faiss",
 ]
 DATASETS = ["sift", "gist", "glove-100", "dbpedia-openai"]
 
@@ -46,6 +46,8 @@ EMBEDDED_DBS = ["faiss", "lancedb"]
 EXCLUDED_JOBS = {
     ("milvus", "dbpedia-openai"),  # No space left on device (container disk full with 1536D vectors)
     ("milvus", "gist"),            # Container OOM during search (30.6GB peak at M=16/efC=64)
+    ("kdbai", "dbpedia-openai"),   # OOM with mmapLevel=0 on 1536D within 64GB
+    ("kdbai-faiss", "dbpedia-openai"),  # FAISS hnsw is fully in-memory, OOMs on 1536D within 64GB
 }
 
 

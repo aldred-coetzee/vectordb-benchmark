@@ -40,7 +40,7 @@ This project may be shared publicly so others can verify benchmarks independentl
 
 Benchmarking tool for comparing vector database performance on the SIFT-1M dataset (1M vectors, 128 dimensions). Measures ingest speed, query throughput (QPS), latency percentiles, and recall accuracy.
 
-## Supported Databases (9 total)
+## Supported Databases (10 total)
 
 | Database | Type | Client File |
 |----------|------|-------------|
@@ -53,6 +53,7 @@ Benchmarking tool for comparing vector database performance on the SIFT-1M datas
 | pgvector | Client-server | `pgvector_client.py` |
 | Redis Stack | Client-server | `redis_client.py` |
 | KDB.AI | Client-server | `kdbai_client.py` |
+| KDB.AI (FAISS) | Client-server | `kdbai_client.py` |
 
 ## Project Structure
 
@@ -570,6 +571,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **AWS resource cleanup**: No orphan volumes/ENIs/EIPs from terminated instances (`InstanceInitiatedShutdownBehavior=terminate` + `DeleteOnTermination` on root volumes works correctly). Worker-v1 AMI (`ami-0f9bf04496aedd923`, 50GB, $2.50/mo) can be deregistered — superseded by worker-v2.
 - **QPS measurement accuracy**: Fixed ±40% run-to-run variance caused by cache bias between efSearch sweeps. Five fixes: (1) Pre-sweep cache warming — 1,000 untimed queries before first timed efSearch to bring HNSW graph into OS/DB caches. (2) Scaled per-efSearch warmup — `max(config, num_queries // 10)` instead of fixed 100 (gives 1,000 for SIFT/GloVe). (3) ChromaDB `_current_ef_search` cache — `collection.modify()` now only called when efSearch changes, not per-query (eliminated 10,000 extra network round-trips per search config). (4) GIST query padding — small query sets (<5,000) are repeated+shuffled to 5,000 for stable QPS; recall computed on original queries only. (5) `--cold` flag — restarts container between efSearch values for cache-isolated measurement (opt-in, too slow for tuning).
 - **`--cold` restart mode**: `python run_benchmark.py --config configs/qdrant.yaml --dataset sift --cold` restarts the DB container between each efSearch value, ensuring each measurement starts with cold OS/DB caches. Requires Docker management (not `--skip-docker`). When active, pre-sweep cache warming is skipped (container restart provides fresh cache). Per-efSearch warmup still runs.
+- **KDB.AI FAISS variant**: Added `kdbai-faiss` config (`configs/kdbai-faiss.yaml`) that uses FAISS-based `flat`/`hnsw` indexes instead of q-language `qFlat`/`qHnsw`. Same `KDBAIClient` class with `use_q_indexes=False`. Runs on different ports (8092/8091) to allow simultaneous local testing. FAISS indexes are fully in-memory (no mmapLevel), single-threaded insert (no THREADS). Excluded from DBpedia-OpenAI (OOM at 1536D). Provides side-by-side comparison of KDB.AI's two index implementations.
 
 **Run 2026-02-06-1750** (KDB.AI tuning) — See [KDBAI_TUNING.md](KDBAI_TUNING.md) for full results, analysis, and recommendations.
 
@@ -602,7 +604,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 | Template | Purpose | Launches |
 |----------|---------|----------|
-| `vectordb-benchmark-full` | Competitive benchmark (all DBs) | 7 DBs × 4 datasets = 28 jobs |
+| `vectordb-benchmark-full` | Competitive benchmark (all DBs) | 8 DBs × 4 datasets = 32 jobs (minus exclusions) |
 | `vectordb-benchmark-kdbai-tuning` | KDB.AI HNSW tuning | 3 datasets × 5 hnsw × 3 docker = 45 jobs |
 
 Both use the same orchestrator AMI and startup script. Fixed values (BenchmarkType, Databases) are baked into each template's UserData. Variable values (Datasets, PullLatest) are instance tags editable at launch.
@@ -615,7 +617,7 @@ Launch Template v13 — `lt-...` (existing)
 **Variable tags** (editable at launch):
 | Tag | Default | Description |
 |-----|---------|-------------|
-| `Databases` | `faiss,qdrant,milvus,redis,chroma,weaviate,kdbai` | Remove entries to run a subset |
+| `Databases` | `faiss,qdrant,milvus,redis,chroma,weaviate,kdbai,kdbai-faiss` | Remove entries to run a subset |
 | `Datasets` | `sift,gist,glove-100,dbpedia-openai` | Remove entries to run a subset |
 | `PullLatest` | `all` | `all`, comma-separated list, or delete to skip |
 
@@ -672,7 +674,7 @@ python aws/orchestrator.py --no-wait
 7. ~~**Fix Worker Name Tags**~~ ✓
 8. ~~**Test Full Orchestrator Flow**~~ ✓ — Minimal test passed
 9. ~~**Fix Benchmark Code Bugs**~~ ✓ — All 9 bugs fixed, all 9 DBs pass on sift-dev
-10. **Run Clean Full Benchmark** — 7 DBs × 4 datasets (28 jobs) via Launch Template v13
+10. **Run Clean Full Benchmark** — 8 DBs × 4 datasets (32 jobs minus exclusions) via Launch Template v13
 11. **Generate Comparison Report** — From S3 results
 12. **Later Enhancements** — SIFT-10M (.bvecs), `run_aws.py` CLI, Web UI, per-job cost tracking (capture full instance uptime boot-to-shutdown, not just benchmark runtime — enables accurate cost-per-run reporting from results DB)
 

@@ -80,6 +80,9 @@ def get_client(database: str):
     if database.lower() == "kdbai":
         from benchmark.clients.kdbai_client import KDBAIClient
         return KDBAIClient()
+    elif database.lower() == "kdbai-faiss":
+        from benchmark.clients.kdbai_client import KDBAIClient
+        return KDBAIClient(use_q_indexes=False, display_name="KDB.AI (FAISS)")
     elif database.lower() == "faiss":
         from benchmark.clients.faiss_client import FAISSClient
         return FAISSClient()
@@ -107,7 +110,7 @@ def get_client(database: str):
     else:
         raise ValueError(
             f"Unsupported database: {database}. "
-            f"Supported: kdbai, faiss, qdrant, pgvector, weaviate, milvus, lancedb, chroma, redis"
+            f"Supported: kdbai, kdbai-faiss, faiss, qdrant, pgvector, weaviate, milvus, lancedb, chroma, redis"
         )
 
 

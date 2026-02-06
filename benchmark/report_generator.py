@@ -184,8 +184,10 @@ class ReportGenerator:
         # Load metadata from config file
         metadata = {}
         config = {}
-        # Normalize database name for config lookup (e.g. "KDB.AI" -> "kdbai")
-        config_name = database.lower().replace(".", "")
+        # Normalize database name for config lookup
+        # e.g. "KDB.AI" -> "kdbai", "KDB.AI (native)" -> "kdbai-native"
+        import re
+        config_name = re.sub(r'[^a-z0-9-]', '', database.lower().replace(' ', '-'))
         config_path = self.configs_dir / f"{config_name}.yaml"
         if config_path.exists():
             try:

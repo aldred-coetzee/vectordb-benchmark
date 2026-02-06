@@ -37,7 +37,7 @@ metadata:
   persistence: disk
   license: Commercial
   url: https://kdb.ai
-  notes: "qIPC protocol. Uses qFlat/qHnsw with mmapLevel=1 (memory-mapped). mmapLevel=0 (fully in-memory) OOM'd on DBpedia-OpenAI (1536D) at M=16/efC=64 within 64GB — mmapLevel=1 avoids this but may reduce recall by 5-14%. qHnsw supports multi-threaded insert via THREADS env var (NUM_WRK=2, THREADS=8). Requires commercial license. Pass numpy arrays (not .tolist()) for 82x faster insert/search. Batch search via table.search(vectors={idx: [v1, v2, ...]}). THREADS parallelism for search only applies to partitioned tables — for single-table benchmarks, batch search does not parallelize server-side."
+  notes: "qIPC protocol. Uses qFlat/qHnsw with mmapLevel=0 (fully in-memory). DBpedia-OpenAI excluded (OOM at 1536D within 64GB). qHnsw supports multi-threaded insert via THREADS env var (NUM_WRK=2, THREADS=8). Requires commercial license. Pass numpy arrays (not .tolist()) for 82x faster insert/search. Batch search via table.search(vectors={idx: [v1, v2, ...]}). THREADS parallelism for search only applies to partitioned tables — for single-table benchmarks, batch search does not parallelize server-side."
 
 # KDB.AI specific parameters
 params:

@@ -130,7 +130,7 @@ upgrade_client() {
     local db=$1
     echo "Upgrading Python client for $db..."
     case $db in
-        kdbai)    sudo -u ec2-user pip3.12 install --upgrade kdbai-client ;;
+        kdbai|kdbai-faiss) sudo -u ec2-user pip3.12 install --upgrade kdbai-client ;;
         qdrant)   sudo -u ec2-user pip3.12 install --upgrade qdrant-client ;;
         milvus)   sudo -u ec2-user pip3.12 install --upgrade pymilvus ;;
         weaviate) sudo -u ec2-user pip3.12 install --upgrade weaviate-client ;;
@@ -157,7 +157,7 @@ elif [ -n "$PULL_LATEST" ]; then
     for img in "${IMAGES[@]}"; do
         echo "Pulling $img..."
         case $img in
-            kdbai)   docker pull portal.dl.kx.com/kdbai-db:latest ;;
+            kdbai|kdbai-faiss) docker pull portal.dl.kx.com/kdbai-db:latest ;;
             qdrant)  docker pull qdrant/qdrant:latest ;;
             milvus)  docker pull milvusdb/milvus:latest ;;
             weaviate) docker pull semitechnologies/weaviate:latest ;;

@@ -1,0 +1,46 @@
+# KDB.AI (FAISS Indexes) Configuration
+# Uses FAISS-based flat/hnsw indexes (in-memory, single-threaded insert)
+# instead of qFlat/qHnsw (which support mmapLevel and THREADS).
+database:
+  name: kdbai-faiss
+  version: null
+  endpoint: http://localhost:8092
+
+container:
+  image: portal.dl.kx.com/kdbai-db
+  cpus: 16
+  memory: 64g
+  ports:
+    - "8092:8082"
+    - "8091:8081"
+  env:
+    KDB_LICENSE_B64: "${KDB_LICENSE_B64}"
+    NUM_WRK: "1"
+    THREADS: "16"
+    VDB_DIR: "/tmp/kx/data/vdb"
+  volumes:
+    - ./data/kdbai-faiss:/tmp/kx/data
+  setup:
+    directories:
+      - path: ./data/kdbai-faiss
+        mode: "0777"
+
+# Health check configuration
+health_check:
+  url: http://localhost:8091/api/v2/ready
+  timeout: 60
+  interval: 2
+
+# Metadata for reports
+metadata:
+  full_name: "KDB.AI (FAISS)"
+  architecture: client-server
+  protocol: QIPC
+  persistence: memory
+  license: Commercial
+  url: https://kdb.ai
+  notes: "Uses FAISS-based flat/hnsw indexes (fully in-memory, no mmapLevel support). Single-threaded insert — THREADS env var does not apply to FAISS hnsw insert. Compared against qFlat/qHnsw variant which supports mmapLevel and multi-threaded insert."
+
+# KDB.AI specific parameters
+params:
+  timeout: 30

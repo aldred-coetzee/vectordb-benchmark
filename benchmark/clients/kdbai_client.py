@@ -17,8 +17,14 @@ from .base import BaseVectorDBClient, IndexConfig, SearchConfig, SearchResult
 class KDBAIClient(BaseVectorDBClient):
     """KDB.AI vector database client."""
 
-    def __init__(self):
-        """Initialize the KDB.AI client."""
+    def __init__(self, use_q_indexes: bool = True, display_name: str = "KDB.AI"):
+        """Initialize the KDB.AI client.
+
+        Args:
+            use_q_indexes: If True, use qFlat/qHnsw (supports mmapLevel, THREADS).
+                          If False, use FAISS-based flat/hnsw (in-memory only, single-threaded insert).
+            display_name: Name shown in reports (e.g., "KDB.AI" or "KDB.AI (FAISS)")
+        """
         if kdbai is None:
             raise ImportError(
                 "kdbai-client package not installed. "
@@ -29,11 +35,13 @@ class KDBAIClient(BaseVectorDBClient):
         self._database: Optional[Any] = None
         self._tables: Dict[str, Any] = {}
         self._index_configs: Dict[str, IndexConfig] = {}
+        self._use_q_indexes = use_q_indexes
+        self._display_name = display_name
 
     @property
     def name(self) -> str:
         """Return the database name."""
-        return "KDB.AI"
+        return self._display_name
 
     def get_version(self) -> str:
         """Return KDB.AI server version."""
@@ -117,31 +125,43 @@ class KDBAIClient(BaseVectorDBClient):
             kdbai_metric = "L2"
 
         # Build index configuration
+        # qFlat/qHnsw: support mmapLevel and THREADS (multi-threaded insert)
+        # flat/hnsw: native in-memory indexes, single-threaded insert
         if index_config.index_type == "flat":
+            flat_type = "qFlat" if self._use_q_indexes else "flat"
+            flat_params = {
+                "dims": dimension,
+                "metric": kdbai_metric,
+            }
+            if self._use_q_indexes:
+                flat_params["mmapLevel"] = 0  # Fully in-memory
             indexes = [
                 {
                     "name": index_config.name,
-                    "type": "qFlat",
+                    "type": flat_type,
                     "column": "vectors",
-                    "params": {
-                        "dims": dimension,
-                        "metric": kdbai_metric,
-                    },
+                    "params": flat_params,
                 }
             ]
         elif index_config.index_type == "hnsw":
+            hnsw_params = {
+                "dims": dimension,
+                "M": index_config.params.get("M", 16),
+                "efConstruction": index_config.params.get("efConstruction", 64),
+                "metric": kdbai_metric,
+            }
+            if self._use_q_indexes:
+                hnsw_type = "qHnsw"
+                hnsw_params["mmapLevel"] = 0  # Fully in-memory (DBpedia-OpenAI excluded — OOMs at 1536D)
+            else:
+                hnsw_type = "hnsw"
+                # Native hnsw: no mmapLevel (always in-memory), no THREADS support
             indexes = [
                 {
                     "name": index_config.name,
-                    "type": "qHnsw",
+                    "type": hnsw_type,
                     "column": "vectors",
-                    "params": {
-                        "dims": dimension,
-                        "M": index_config.params.get("M", 16),
-                        "efConstruction": index_config.params.get("efConstruction", 64),
-                        "metric": kdbai_metric,
-                        "mmapLevel": 1,  # Memory-mapped (mmapLevel=0 OOMs on high-dim datasets like DBpedia-OpenAI)
-                    },
+                    "params": hnsw_params,
                 }
             ]
         else:
