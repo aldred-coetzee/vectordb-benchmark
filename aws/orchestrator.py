@@ -341,41 +341,22 @@ def wait_for_completion(
     for job_name in failed:
         results[job_name] = "launch_failed"
 
-    # Track re-launch attempts per job (max 2)
+    # Track re-launch attempts per job (max 5 — capacity frees up gradually)
     relaunch_attempts: dict[str, int] = {}
+    max_relaunch_attempts = 5
     # Track why jobs failed for final reporting
     failure_reasons: dict[str, str] = {
         name: err for name, (err, _) in failed.items()
     }
+    # Track how many jobs have completed so we know when capacity frees up
+    prev_completed = 0
 
     poll_cycle = 0
 
     while time.time() - start_time < timeout_seconds:
         poll_cycle += 1
 
-        # Re-launch failed jobs within the first 30 minutes (before checking completion)
-        elapsed = time.time() - start_time
-        if elapsed < relaunch_window_seconds and relaunch_fn:
-            for job_name in list(failed.keys()):
-                if results[job_name] != "launch_failed":
-                    continue  # Already re-launched successfully or status changed
-                attempts = relaunch_attempts.get(job_name, 0)
-                if attempts >= 2:
-                    continue  # Max re-launch attempts reached
-                relaunch_attempts[job_name] = attempts + 1
-                _, job_params = failed[job_name]
-                print(f"  Re-launching {job_name} (attempt {attempts + 1}/2, "
-                      f"previous: {failure_reasons[job_name]})")
-                instance_id, error = relaunch_fn(job_params)
-                if instance_id:
-                    launched[job_name] = instance_id
-                    results[job_name] = "pending"
-                    del failed[job_name]
-                    failure_reasons.pop(job_name, None)
-                else:
-                    failure_reasons[job_name] = error or "unknown error"
-
-        # Check S3 for job completion
+        # Check S3 for job completion (BEFORE re-launch, so we know if capacity freed up)
         all_done = True
         for job_name in job_names:
             if results[job_name] in ("completed", "failed", "skipped", "instance_crashed", "launch_failed"):
@@ -387,7 +368,18 @@ def wait_for_completion(
             if status == "pending":
                 all_done = False
 
-        if all_done:
+        # Don't exit yet if there are launch_failed jobs that could still be re-launched
+        elapsed_check = time.time() - start_time
+        retriable_failures = (
+            elapsed_check < relaunch_window_seconds
+            and relaunch_fn
+            and any(
+                results[name] == "launch_failed"
+                and relaunch_attempts.get(name, 0) < max_relaunch_attempts
+                for name in failed
+            )
+        )
+        if all_done and not retriable_failures:
             break
 
         # Instance health check every 5 cycles (~2.5 min)
@@ -424,6 +416,35 @@ def wait_for_completion(
             parts.append(f"{launch_failed} launch failed")
         parts.append(f"{pending} pending")
         print(f"  Status: {', '.join(parts)}")
+
+        # Re-launch failed jobs when capacity frees up (new completions detected)
+        cur_completed = completed + skipped + s3_failed + crashed
+        elapsed = time.time() - start_time
+        has_failed_jobs = any(
+            results[name] == "launch_failed" and relaunch_attempts.get(name, 0) < max_relaunch_attempts
+            for name in failed
+        )
+        if (has_failed_jobs and elapsed < relaunch_window_seconds
+                and relaunch_fn and cur_completed > prev_completed):
+            for job_name in list(failed.keys()):
+                if results[job_name] != "launch_failed":
+                    continue  # Already re-launched successfully
+                attempts = relaunch_attempts.get(job_name, 0)
+                if attempts >= max_relaunch_attempts:
+                    continue
+                relaunch_attempts[job_name] = attempts + 1
+                _, job_params = failed[job_name]
+                print(f"  Re-launching {job_name} (attempt {attempts + 1}/{max_relaunch_attempts}, "
+                      f"previous: {failure_reasons[job_name]})")
+                instance_id, error = relaunch_fn(job_params)
+                if instance_id:
+                    launched[job_name] = instance_id
+                    results[job_name] = "pending"
+                    del failed[job_name]
+                    failure_reasons.pop(job_name, None)
+                else:
+                    failure_reasons[job_name] = error or "unknown error"
+        prev_completed = cur_completed
 
         time.sleep(30)  # Check every 30 seconds
 
