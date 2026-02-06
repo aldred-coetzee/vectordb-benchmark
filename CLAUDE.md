@@ -586,46 +586,47 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 ### Triggering Benchmarks
 
-**Two methods depending on use case:**
+**Two launch templates — one per benchmark type:**
 
-| Method | Use Case | How |
-|--------|----------|-----|
-| **Launch Template** | Full benchmark (7 DBs × 4 datasets) | EC2 Console → Launch Template → Launch |
-| **CLI from laptop** | Custom runs (subset of DBs, new releases) | `python aws/orchestrator.py --databases ...` |
+| Template | Purpose | Launches |
+|----------|---------|----------|
+| `vectordb-benchmark-full` | Competitive benchmark (all DBs) | 7 DBs × 4 datasets = 28 jobs |
+| `vectordb-benchmark-kdbai-tuning` | KDB.AI HNSW tuning | 3 datasets × 5 hnsw × 3 docker = 45 jobs |
 
-#### Method 1: Launch Template (Full Run)
+Both use the same orchestrator AMI and startup script. Fixed values (BenchmarkType, Databases) are baked into each template's UserData. Variable values (Datasets, PullLatest) are instance tags editable at launch.
 
-One Launch Template: `vectordb-benchmark-full` (version 13)
-- Instance type: t3.small (orchestrator)
-- AMI: `ami-09ed5dd071675cfef` (Orchestrator AMI)
-- IAM profile: vectordb-benchmark-role
-- Instance tags: Name=`vectordb-orchestrator`, Owner=`acoetzee`, Project=`vectordb-benchmark`
-- User-data: `git pull` then runs local `aws/orchestrator_startup.sh`
-- Orchestrator self-tags with run ID after startup
-- Defaults to 7 DBs × 4 datasets = 28 jobs (pgvector/lancedb excluded)
-- Fire and forget - just launch and check S3 later
+#### Template 1: Competitive (`vectordb-benchmark-full`)
 
-**Configuration via Instance Tags** (pre-filled in template, editable at launch):
+Launch Template v13 — `lt-...` (existing)
+
+**Fixed in UserData**: benchmark-type=competitive (default)
+**Variable tags** (editable at launch):
 | Tag | Default | Description |
 |-----|---------|-------------|
-| `Databases` | `faiss,qdrant,milvus,redis,chroma,weaviate,kdbai` | Comma-separated list — remove entries to run a subset |
-| `Datasets` | `sift,gist,glove-100,dbpedia-openai` | Comma-separated list — remove entries to run a subset |
-| `BenchmarkType` | `competitive` | S3 organization: `competitive`, `kdbai-tuning`, etc. |
-| `PullLatest` | `all` | Pull fresh Docker images at startup (`all`, comma-separated list, or delete tag to skip) |
+| `Databases` | `faiss,qdrant,milvus,redis,chroma,weaviate,kdbai` | Remove entries to run a subset |
+| `Datasets` | `sift,gist,glove-100,dbpedia-openai` | Remove entries to run a subset |
+| `PullLatest` | `all` | `all`, comma-separated list, or delete to skip |
 
-Tags are pre-filled with all values. To run a subset, delete entries at launch time. pgvector and lancedb can be added back to `Databases` if needed (pgvector is slow on high-dim; lancedb has no supported indexes).
+#### Template 2: KDB.AI Tuning (`vectordb-benchmark-kdbai-tuning`)
 
-**Flow**:
-1. EC2 Console → Launch Templates → `vectordb-benchmark-full` → Launch
-2. Edit tags if you want a subset (optional)
-3. Orchestrator instance launches workers via API
-4. Workers run benchmarks, upload to S3, auto-terminate
-5. Orchestrator monitors, then auto-terminates
-6. Results in `s3://vectordb-benchmark-590780615264/runs/{run-id}/`
+Launch Template v1 — `lt-09cf10d368856c5ea`
 
-#### Method 2: CLI (Custom Runs)
+**Fixed in UserData**: `--benchmark-type kdbai-tuning --databases kdbai`
+**Variable tags** (editable at launch):
+| Tag | Default | Description |
+|-----|---------|-------------|
+| `Datasets` | `sift,glove-100,gist` | Remove entries for quick test (no dbpedia-openai — OOMs) |
+| `PullLatest` | `kdbai` | Pull fresh KDB.AI image, or delete to skip |
 
-For new KDB.AI releases or testing specific databases:
+#### How to Launch
+
+1. EC2 Console → Launch Templates → pick template → Launch
+2. Edit variable tags if needed (optional)
+3. Orchestrator launches workers, monitors, generates report
+4. All instances auto-terminate on completion
+5. Results in `s3://vectordb-benchmark-590780615264/runs/{type}/{run-id}/`
+
+#### CLI (Custom Runs)
 
 ```bash
 # Ensure AWS SSO is active
@@ -634,31 +635,25 @@ aws sso login --profile vectordb
 # KDB.AI release comparison (pull fresh image)
 python aws/orchestrator.py --databases kdbai,qdrant,milvus --pull-latest kdbai --datasets sift
 
-# KDB.AI tuning benchmark (different S3 path)
-python aws/orchestrator.py --databases kdbai --benchmark-type kdbai-tuning
+# KDB.AI tuning via CLI
+python aws/orchestrator.py --databases kdbai --datasets sift,glove-100,gist \
+    --benchmark-type kdbai-tuning
 
 # Quick single-DB test
 python aws/orchestrator.py --databases qdrant --datasets sift
 
-# Full run from CLI (same as Launch Template)
+# Full competitive run from CLI (same as launch template)
 python aws/orchestrator.py
 
 # Full run, don't wait for completion
 python aws/orchestrator.py --no-wait
 ```
 
-#### Why This Approach
-
-- **Simple**: One template for common case, CLI for everything else
-- **No UI needed**: Usage is occasional ("once in a while" full runs, subset on KDB.AI releases)
-- **Flexible**: CLI allows any combination without predefined presets
-- **Future option**: Can add Streamlit UI later if team grows or usage increases
-
 ### Next Steps (Priority Order)
 
 1. ~~**Build Orchestrator**~~ ✓
 2. ~~**Verify Worker End-to-End**~~ ✓
-3. ~~**Create Launch Template**~~ ✓ — version 13 (BenchmarkType, PullLatest tags; pgvector/lancedb excluded)
+3. ~~**Create Launch Templates**~~ ✓ — `vectordb-benchmark-full` (competitive, v13) + `vectordb-benchmark-kdbai-tuning` (tuning, v1)
 4. ~~**Add IAM Permissions**~~ ✓ — PassRole + EC2 policies
 5. ~~**Build Orchestrator AMI**~~ ✓ — `ami-09ed5dd071675cfef`
 6. ~~**Update Launch Template**~~ ✓ — Orchestrator AMI + tags + git-based user-data

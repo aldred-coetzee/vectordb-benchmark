@@ -5,16 +5,34 @@
 # Runs on the Orchestrator AMI (Python 3.12, boto3, git — no Docker/datasets).
 # Launches worker instances, monitors progress, aggregates results.
 #
-# CONFIGURATION VIA INSTANCE TAGS (all optional — defaults from orchestrator.py):
-#   Databases      - Comma-separated list (default: all in DATABASES)
-#   Datasets       - Comma-separated list (default: all in DATASETS)
-#   BenchmarkType  - S3 organization type (default: competitive)
-#   PullLatest     - Docker images to refresh (default: none)
+# CONFIGURATION:
+#   Fixed values are passed as command-line args from the launch template UserData.
+#   Variable values are read from instance tags.
 #
-# Example tags when launching:
-#   Databases = qdrant,milvus,kdbai
-#   Datasets = sift
-#   BenchmarkType = kdbai-tuning
+#   Command-line args (fixed per template, override tags):
+#     --benchmark-type  - e.g., competitive, kdbai-tuning
+#     --databases       - e.g., kdbai
+#
+#   Instance tags (variable, editable at launch):
+#     Datasets    - Comma-separated list (default: all in orchestrator.py)
+#     PullLatest  - Docker images to refresh (default: none)
+
+# =============================================================================
+# Parse command-line args (fixed values from launch template UserData)
+# =============================================================================
+BENCHMARK_TYPE=""
+DATABASES=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --benchmark-type) BENCHMARK_TYPE="$2"; shift 2 ;;
+        --databases)      DATABASES="$2"; shift 2 ;;
+        *) echo "Unknown arg: $1"; shift ;;
+    esac
+done
+
+# Default benchmark type to competitive if not passed
+[ -z "$BENCHMARK_TYPE" ] && BENCHMARK_TYPE="competitive"
 
 # =============================================================================
 # Configuration
@@ -30,27 +48,22 @@ IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-
 INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
 echo "Instance ID: $INSTANCE_ID"
 
-# Read configuration from instance tags (with defaults)
+# Read variable configuration from instance tags
 get_tag() {
     aws ec2 describe-tags \
         --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=$1" \
         --query 'Tags[0].Value' --output text --region $AWS_REGION 2>/dev/null
 }
 
-DATABASES=$(get_tag "Databases")
+# Only read from tags if not already set via command-line args
+[ -z "$DATABASES" ] && DATABASES=$(get_tag "Databases")
 DATASETS=$(get_tag "Datasets")
 PULL_LATEST=$(get_tag "PullLatest")
-BENCHMARK_TYPE=$(get_tag "BenchmarkType")
-TUNING_CONFIG=$(get_tag "TuningConfig")
 
 # Normalize "None" (AWS CLI returns literal "None" for missing tags)
 [ "$DATABASES" = "None" ] && DATABASES=""
 [ "$DATASETS" = "None" ] && DATASETS=""
 [ "$PULL_LATEST" = "None" ] && PULL_LATEST=""
-[ "$BENCHMARK_TYPE" = "None" ] && BENCHMARK_TYPE=""
-[ "$TUNING_CONFIG" = "None" ] && TUNING_CONFIG=""
-# Default benchmark type to competitive
-[ -z "$BENCHMARK_TYPE" ] && BENCHMARK_TYPE="competitive"
 
 # =============================================================================
 # Logging
@@ -64,7 +77,6 @@ echo "Benchmark type: $BENCHMARK_TYPE"
 echo "Databases: $DATABASES"
 echo "Datasets: $DATASETS"
 echo "Pull latest: ${PULL_LATEST:-none}"
-echo "Tuning config: ${TUNING_CONFIG:-none}"
 echo "========================================"
 
 # =============================================================================
@@ -128,9 +140,6 @@ if [ -n "$DATASETS" ]; then
 fi
 if [ -n "$PULL_LATEST" ]; then
     ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --pull-latest $PULL_LATEST"
-fi
-if [ -n "$TUNING_CONFIG" ]; then
-    ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --tuning-config $TUNING_CONFIG"
 fi
 
 echo "Running: sudo -u ec2-user python3.12 $ORCHESTRATOR_ARGS"

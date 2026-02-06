@@ -41,16 +41,17 @@ DATASETS = ["sift", "gist", "glove-100", "dbpedia-openai"]
 EMBEDDED_DBS = ["faiss", "lancedb"]
 
 
-def load_tuning_config(tuning_config_path: str) -> dict:
-    """Load a tuning YAML config file."""
+def load_tuning_config(benchmark_type: str) -> dict | None:
+    """Load a tuning config derived from the benchmark type.
+
+    Convention: configs/tuning/{benchmark_type}.yaml
+    Returns None if no tuning config exists for this benchmark type.
+    """
     import yaml
 
-    config_path = Path(tuning_config_path)
-    # Search in configs/tuning/ if not a full path
+    config_path = Path(__file__).parent.parent / "configs" / "tuning" / f"{benchmark_type}.yaml"
     if not config_path.exists():
-        config_path = Path(__file__).parent.parent / "configs" / "tuning" / tuning_config_path
-    if not config_path.exists():
-        raise FileNotFoundError(f"Tuning config not found: {tuning_config_path}")
+        return None
 
     with open(config_path) as f:
         return yaml.safe_load(f)
@@ -103,7 +104,6 @@ def create_user_data(
     run_id: str,
     benchmark_type: str = "competitive",
     pull_latest: str = "",
-    tuning_config_file: str = "",
     hnsw_m: str = "",
     hnsw_efc: str = "",
     hnsw_name: str = "",
@@ -122,8 +122,7 @@ def create_user_data(
     script = script.replace("{{BENCHMARK_TYPE}}", benchmark_type)
     script = script.replace("{{PULL_LATEST}}", pull_latest)
 
-    # Tuning-specific placeholders
-    script = script.replace("{{TUNING_CONFIG}}", tuning_config_file)
+    # Tuning-specific placeholders (worker derives tuning config from BENCHMARK_TYPE)
     script = script.replace("{{HNSW_M}}", hnsw_m)
     script = script.replace("{{HNSW_EFC}}", hnsw_efc)
     script = script.replace("{{HNSW_NAME}}", hnsw_name)
@@ -143,7 +142,6 @@ def launch_worker(
     benchmark_type: str = "competitive",
     pull_latest: str = "",
     dry_run: bool = False,
-    tuning_config_file: str = "",
     hnsw_m: str = "",
     hnsw_efc: str = "",
     hnsw_name: str = "",
@@ -155,7 +153,6 @@ def launch_worker(
 
     user_data = create_user_data(
         database, dataset, run_id, benchmark_type, pull_latest,
-        tuning_config_file=tuning_config_file,
         hnsw_m=hnsw_m, hnsw_efc=hnsw_efc, hnsw_name=hnsw_name,
         docker_config_name=docker_config_name,
         docker_threads=docker_threads, docker_num_wrk=docker_num_wrk,
@@ -395,11 +392,6 @@ def main():
         default=180,
         help="Timeout in minutes for waiting (default: 180)",
     )
-    parser.add_argument(
-        "--tuning-config",
-        help="Tuning config file (e.g., kdbai-hnsw.yaml or full path). "
-             "Generates cross-product jobs (dataset x hnsw_config x docker_config).",
-    )
 
     args = parser.parse_args()
 
@@ -408,7 +400,21 @@ def main():
     datasets = [d.strip() for d in args.datasets.split(",")]
     run_id = args.run_id or generate_run_id()
     benchmark_type = args.benchmark_type
-    is_tuning = bool(args.tuning_config)
+
+    # Each benchmark type has explicit handling
+    if benchmark_type == "competitive":
+        is_tuning = False
+        tuning_cfg = None
+    elif benchmark_type == "kdbai-tuning":
+        is_tuning = True
+        tuning_cfg = load_tuning_config(benchmark_type)
+        if tuning_cfg is None:
+            print(f"Error: Tuning config not found: configs/tuning/{benchmark_type}.yaml")
+            return 1
+    else:
+        print(f"Unknown benchmark type: {benchmark_type}")
+        print("Known types: competitive, kdbai-tuning")
+        return 1
 
     # Validate datasets
     for ds in datasets:
@@ -429,7 +435,7 @@ def main():
     print(f"Run ID:     {run_id}")
     print(f"Type:       {benchmark_type}")
     if is_tuning:
-        print(f"Mode:       TUNING ({args.tuning_config})")
+        print(f"Mode:       TUNING (configs/tuning/{benchmark_type}.yaml)")
     print(f"Databases:  {', '.join(databases)}")
     print(f"Datasets:   {', '.join(datasets)}")
     print(f"Pull latest: {args.pull_latest or 'none'}")
@@ -450,7 +456,6 @@ def main():
 
     # Build job list — competitive or tuning mode
     if is_tuning:
-        tuning_cfg = load_tuning_config(args.tuning_config)
         tuning_jobs = generate_tuning_jobs(tuning_cfg, datasets)
         # Job names for S3 tracking: kdbai-sift-M32_efC128-1wrk_16thr
         job_names = [
@@ -475,7 +480,7 @@ def main():
             "databases": databases,
             "datasets": datasets,
             "pull_latest": args.pull_latest,
-            "tuning_config": args.tuning_config or None,
+            "tuning_config": f"configs/tuning/{benchmark_type}.yaml" if is_tuning else None,
             "started_at": datetime.now().isoformat(),
             "jobs": (
                 [{"job_name": name} for name in job_names]
@@ -503,7 +508,6 @@ def main():
                 benchmark_type=benchmark_type,
                 pull_latest=args.pull_latest,
                 dry_run=args.dry_run,
-                tuning_config_file=args.tuning_config,
                 hnsw_m=str(job["hnsw_m"]),
                 hnsw_efc=str(job["hnsw_efc"]),
                 hnsw_name=job["hnsw_name"],

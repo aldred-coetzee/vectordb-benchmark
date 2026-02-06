@@ -37,17 +37,19 @@ Find optimal HNSW parameters for KDB.AI across all benchmark datasets. The compe
 
 ```bash
 python run_benchmark.py --config configs/kdbai.yaml --dataset sift-dev \
-    --tuning-config configs/tuning/kdbai-hnsw.yaml
+    --tuning-config configs/tuning/kdbai-tuning.yaml
 ```
 
 ### AWS (full benchmark)
 
 ```bash
-# Via CLI
-python aws/orchestrator.py --databases kdbai --datasets sift,glove-100,gist \
-    --benchmark-type kdbai-tuning --tuning-config configs/tuning/kdbai-hnsw.yaml
+# Via Launch Template (recommended):
+#   EC2 Console → Launch Templates → vectordb-benchmark-kdbai-tuning → Launch
+#   Edit Datasets/PullLatest tags if needed, then launch.
 
-# Via Launch Template: set BenchmarkType=kdbai-tuning, TuningConfig=kdbai-hnsw.yaml
+# Via CLI:
+python aws/orchestrator.py --databases kdbai --datasets sift,glove-100,gist \
+    --benchmark-type kdbai-tuning
 ```
 
 ### Job Structure
@@ -60,7 +62,7 @@ Each unique combination of (dataset x hnsw_config x docker_config) = one worker 
 
 ## Tuning Config
 
-See `configs/tuning/kdbai-hnsw.yaml` — the single source of truth for what gets swept.
+See `configs/tuning/kdbai-tuning.yaml` — the single source of truth for what gets swept.
 
 ## Results
 

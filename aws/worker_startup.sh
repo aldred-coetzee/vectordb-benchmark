@@ -23,7 +23,6 @@ PULL_LATEST="{{PULL_LATEST}}"     # e.g., "" or "kdbai" or "all"
 MAX_RUNTIME_MINUTES=120           # Safety timeout
 
 # Tuning-specific variables (empty for competitive benchmarks)
-TUNING_CONFIG="{{TUNING_CONFIG}}"         # e.g., configs/tuning/kdbai-hnsw.yaml
 HNSW_M="{{HNSW_M}}"                       # e.g., 32
 HNSW_EFC="{{HNSW_EFC}}"                   # e.g., 128
 HNSW_NAME="{{HNSW_NAME}}"                 # e.g., M32_efC128
@@ -42,7 +41,8 @@ echo "Worker startup: $(date)"
 echo "Database: $DATABASE"
 echo "Dataset: $DATASET"
 echo "Run ID: $RUN_ID"
-if [ -n "$TUNING_CONFIG" ]; then
+echo "Benchmark type: $BENCHMARK_TYPE"
+if [ -n "$HNSW_NAME" ]; then
     echo "Mode: TUNING"
     echo "HNSW: M=$HNSW_M efC=$HNSW_EFC ($HNSW_NAME)"
     echo "Docker: THREADS=$DOCKER_THREADS NUM_WRK=$DOCKER_NUM_WRK ($DOCKER_CONFIG_NAME)"
@@ -180,8 +180,10 @@ cd /app/vectordb-benchmark
 # Build benchmark command
 BENCHMARK_CMD="run_benchmark.py --config configs/${DATABASE}.yaml --dataset ${DATASET} --output results"
 
-# Add tuning arguments if this is a tuning run
-if [ -n "$TUNING_CONFIG" ]; then
+# Add tuning arguments for known tuning benchmark types
+if [ "$BENCHMARK_TYPE" = "kdbai-tuning" ]; then
+    TUNING_CONFIG="configs/tuning/kdbai-tuning.yaml"
+    echo "Tuning config: $TUNING_CONFIG"
     BENCHMARK_CMD="$BENCHMARK_CMD --tuning-config ${TUNING_CONFIG}"
 
     if [ -n "$HNSW_M" ]; then
