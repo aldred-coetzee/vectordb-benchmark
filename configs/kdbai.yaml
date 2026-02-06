@@ -13,7 +13,8 @@ container:
     - "8081:8081"
   env:
     KDB_LICENSE_B64: "${KDB_LICENSE_B64}"
-    THREADS: "16"
+    NUM_WRK: "2"
+    THREADS: "8"
     VDB_DIR: "/tmp/kx/data/vdb"
   volumes:
     - ./data/kdbai:/tmp/kx/data
