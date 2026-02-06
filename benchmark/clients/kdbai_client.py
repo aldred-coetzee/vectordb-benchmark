@@ -134,7 +134,7 @@ class KDBAIClient(BaseVectorDBClient):
                 "metric": kdbai_metric,
             }
             if self._use_q_indexes:
-                flat_params["mmapLevel"] = 0  # Fully in-memory
+                flat_params["mmapLevel"] = 1 if dimension > 960 else 0
             indexes = [
                 {
                     "name": index_config.name,
@@ -152,7 +152,8 @@ class KDBAIClient(BaseVectorDBClient):
             }
             if self._use_q_indexes:
                 hnsw_type = "qHnsw"
-                hnsw_params["mmapLevel"] = 0  # Fully in-memory (DBpedia-OpenAI excluded — OOMs at 1536D)
+                # mmapLevel=0 (in-memory) for best recall; fall back to 1 (mmap) for high-dim to avoid OOM
+                hnsw_params["mmapLevel"] = 1 if dimension > 960 else 0
             else:
                 hnsw_type = "hnsw"
                 # Native hnsw: no mmapLevel (always in-memory), no THREADS support

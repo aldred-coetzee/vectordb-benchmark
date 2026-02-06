@@ -109,19 +109,13 @@ exclusions:
   - database: milvus
     dataset: gist
     reason: "Container crashed (OOM) during search at M=16/efC=64. Ingest succeeded (30.6GB peak memory) but Milvus process was killed before search completed."
-  - database: kdbai
-    dataset: dbpedia-openai
-    reason: "OOM with mmapLevel=0 (fully in-memory) on 1536D vectors within 64GB container limit at M=16/efC=64."
-  - database: kdbai-faiss
-    dataset: dbpedia-openai
-    reason: "FAISS hnsw is fully in-memory (no mmapLevel support). OOMs on 1536D vectors within 64GB container limit at M=16/efC=64."
 
 # Caveats — database+dataset combinations that run but with known limitations.
 # These are surfaced in the report alongside exclusions.
 caveats:
   - database: kdbai
     dataset: all
-    note: "Running with mmapLevel=0 (fully in-memory) on qFlat/qHnsw indexes. DBpedia-OpenAI excluded (OOM at 1536D within 64GB). Multi-threaded insert via THREADS env var (NUM_WRK=2, THREADS=8)."
+    note: "Running qFlat/qHnsw with mmapLevel=0 (fully in-memory) for dims ≤ 960, mmapLevel=1 (memory-mapped) for dims > 960 to avoid OOM. mmapLevel=1 may reduce recall by 5-14%. Multi-threaded insert via THREADS env var (NUM_WRK=2, THREADS=8)."
   - database: kdbai-faiss
     dataset: all
     note: "Uses FAISS-based flat/hnsw indexes (fully in-memory). Does not support mmapLevel or multi-threaded insert (THREADS). Compared against KDB.AI (qFlat/qHnsw) which uses mmapLevel=1 and THREADS."
