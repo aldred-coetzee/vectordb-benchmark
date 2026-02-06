@@ -206,12 +206,15 @@ class BenchmarkRunner:
             self.client.search(table_name, queries[i], k, search_config)
 
         # Pad queries for QPS stability on small query sets (e.g., GIST has only 1K)
+        # Original queries run first (in order, for recall), then shuffled extras for QPS
         MIN_QUERIES_FOR_QPS = 5000
         if num_queries < MIN_QUERIES_FOR_QPS:
-            repeat_factor = (MIN_QUERIES_FOR_QPS + num_queries - 1) // num_queries
-            qps_queries = np.tile(queries, (repeat_factor, 1))[:MIN_QUERIES_FOR_QPS]
-            np.random.default_rng(42).shuffle(qps_queries)
-            qps_num_queries = MIN_QUERIES_FOR_QPS
+            extra_needed = MIN_QUERIES_FOR_QPS - num_queries
+            repeat_factor = (extra_needed + num_queries - 1) // num_queries
+            extra_queries = np.tile(queries, (repeat_factor, 1))[:extra_needed]
+            np.random.default_rng(42).shuffle(extra_queries)
+            qps_queries = np.concatenate([queries, extra_queries])
+            qps_num_queries = len(qps_queries)
             print(f"    Padded {num_queries:,} queries to {qps_num_queries:,} for QPS measurement")
         else:
             qps_queries = queries
@@ -221,7 +224,7 @@ class BenchmarkRunner:
         if self.monitor:
             self.monitor.start_monitoring(interval_seconds=0.1)
 
-        # Run timed queries — collect recall IDs only for original queries
+        # Run timed queries — original queries first (for recall), then extras (QPS only)
         print(f"    Running {qps_num_queries:,} timed queries...")
         latencies_ms = []
         all_retrieved_ids = []
@@ -231,7 +234,7 @@ class BenchmarkRunner:
         for i in range(qps_num_queries):
             result = self.client.search(table_name, qps_queries[i], k, search_config)
             latencies_ms.append(result.latency_ms)
-            # Only collect results for original queries (for recall calculation)
+            # Collect results only for original queries (first num_queries, in order)
             if i < num_queries:
                 all_retrieved_ids.append(result.ids)
 
