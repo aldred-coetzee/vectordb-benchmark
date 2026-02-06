@@ -22,7 +22,7 @@ AWS_REGION = "us-west-2"
 S3_BUCKET = "vectordb-benchmark-590780615264"
 
 # EC2 Configuration
-WORKER_AMI = "ami-0f9bf04496aedd923"  # vectordb-benchmark-worker-v1
+WORKER_AMI = "ami-0be95bd332a011cc2"  # vectordb-benchmark-worker-v2
 WORKER_INSTANCE_TYPE = "m5.4xlarge"
 SUBNET_ID = "subnet-08871c182a622a9e9"
 SECURITY_GROUP_ID = "sg-0fe6723dd1004558d"

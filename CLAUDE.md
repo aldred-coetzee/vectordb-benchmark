@@ -313,15 +313,18 @@ Orchestrator AMI contains:
 
 #### Worker AMI (Pre-baked)
 
-`ami-0f9bf04496aedd923` (`vectordb-benchmark-worker-v1`)
+`ami-0be95bd332a011cc2` (`vectordb-benchmark-worker-v2`)
 
 ```
-Worker AMI (v1) contains:
+Worker AMI (v2) contains:
   /data/
     sift/         (~500MB)  - SIFT-1M dataset
     gist/         (~4GB)    - GIST-1M dataset
+    glove-100/    (~463MB)  - GloVe-100 (HDF5, cosine, 100D)
+    dbpedia-openai/ (~5.8GB) - DBpedia-OpenAI-1M (HDF5, cosine, 1536D)
   /app/
     vectordb-benchmark/     - benchmark code (git pull at startup for latest)
+  Python packages: h5py 3.15.1
   Docker images (pre-pulled):
     - qdrant/qdrant:latest
     - milvusdb/milvus:latest
@@ -332,13 +335,12 @@ Worker AMI (v1) contains:
     - portal.dl.kx.com/kdbai-db:latest
 ```
 
-- AMI size: ~15GB
-- AMI storage cost: ~$0.75/month
+- AMI size: ~25GB
+- AMI storage cost: ~$1.25/month
 - Workers launch ready to run (no download wait)
 
-**Not yet included** (need data loader extensions):
+**Not yet included**:
 - SIFT-10M (different format - .bvecs)
-- GloVe-100 (HDF5 format)
 
 **Docker Image Updates**:
 - Default: Use images baked in AMI (fast)
@@ -477,7 +479,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 **Completed**:
 - [x] Test EC2 launch (verified SSH access works)
-- [x] Worker AMI v1: `ami-0f9bf04496aedd923` (`vectordb-benchmark-worker-v1`)
+- [x] Worker AMI v2: `ami-0be95bd332a011cc2` (`vectordb-benchmark-worker-v2`) — adds h5py, GloVe-100, DBpedia-OpenAI
 - [x] Orchestrator AMI v1: `ami-09ed5dd071675cfef` (`vectordb-benchmark-orchestrator-v1`)
 - [x] Refactored `SIFTDataset` → `TexmexDataset` (auto-detects dataset name from directory)
 - [x] Standardized dataset paths to `data/` (relative paths, symlinked to `/data/` on AWS)
