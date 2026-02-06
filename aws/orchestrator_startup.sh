@@ -5,9 +5,9 @@
 # Runs on the Orchestrator AMI (Python 3.12, boto3, git — no Docker/datasets).
 # Launches worker instances, monitors progress, aggregates results.
 #
-# CONFIGURATION VIA INSTANCE TAGS:
-#   Databases   - Comma-separated list (default: all 9)
-#   Datasets    - Comma-separated list (default: sift,gist)
+# CONFIGURATION VIA INSTANCE TAGS (all optional — defaults from orchestrator.py):
+#   Databases   - Comma-separated list (default: all in DATABASES)
+#   Datasets    - Comma-separated list (default: all in DATASETS)
 #   PullLatest  - Docker images to refresh (default: none)
 #
 # Example tags when launching:
@@ -39,9 +39,9 @@ DATABASES=$(get_tag "Databases")
 DATASETS=$(get_tag "Datasets")
 PULL_LATEST=$(get_tag "PullLatest")
 
-# Apply defaults if tags not set or returned "None"
-[ -z "$DATABASES" ] || [ "$DATABASES" = "None" ] && DATABASES="qdrant,milvus,weaviate,chroma,redis,pgvector,kdbai,faiss,lancedb"
-[ -z "$DATASETS" ] || [ "$DATASETS" = "None" ] && DATASETS="sift,gist"
+# Normalize "None" (AWS CLI returns literal "None" for missing tags)
+[ "$DATABASES" = "None" ] && DATABASES=""
+[ "$DATASETS" = "None" ] && DATASETS=""
 [ "$PULL_LATEST" = "None" ] && PULL_LATEST=""
 
 # =============================================================================
@@ -107,12 +107,15 @@ echo "Starting orchestrator..."
 cd /app/vectordb-benchmark
 
 # Build command with options
-# Run as ec2-user since Python dependencies are installed for that user
-ORCHESTRATOR_ARGS="aws/orchestrator.py"
-ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --databases $DATABASES"
-ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --datasets $DATASETS"
-ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --run-id $RUN_ID"
+# Only pass flags when tags are set — orchestrator.py defaults to all databases/datasets
+ORCHESTRATOR_ARGS="aws/orchestrator.py --run-id $RUN_ID"
 
+if [ -n "$DATABASES" ]; then
+    ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --databases $DATABASES"
+fi
+if [ -n "$DATASETS" ]; then
+    ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --datasets $DATASETS"
+fi
 if [ -n "$PULL_LATEST" ]; then
     ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --pull-latest $PULL_LATEST"
 fi

@@ -589,8 +589,8 @@ One Launch Template: `vectordb-benchmark-full` (version 10)
 **Configuration via Instance Tags** (optional):
 | Tag | Default | Description |
 |-----|---------|-------------|
-| `Databases` | all 9 | Comma-separated list (e.g., `qdrant,milvus,kdbai`) |
-| `Datasets` | `sift,gist` | Comma-separated list |
+| `Databases` | all (from `DATABASES` in orchestrator.py) | Comma-separated list (e.g., `qdrant,milvus,kdbai`) |
+| `Datasets` | all (from `DATASETS` in orchestrator.py) | Comma-separated list (e.g., `sift,gist`) |
 | `PullLatest` | none | Docker images to refresh (e.g., `kdbai,qdrant`) |
 
 **Flow**:
