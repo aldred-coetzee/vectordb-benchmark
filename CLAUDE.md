@@ -667,7 +667,7 @@ python aws/orchestrator.py --no-wait
 9. ~~**Fix Benchmark Code Bugs**~~ ✓ — All 9 bugs fixed, all 9 DBs pass on sift-dev
 10. **Run Clean Full Benchmark** — 7 DBs × 4 datasets (28 jobs) via Launch Template v13
 11. **Generate Comparison Report** — From S3 results
-12. **Later Enhancements** — SIFT-10M (.bvecs), `run_aws.py` CLI, Web UI
+12. **Later Enhancements** — SIFT-10M (.bvecs), `run_aws.py` CLI, Web UI, per-job cost tracking (capture full instance uptime boot-to-shutdown, not just benchmark runtime — enables accurate cost-per-run reporting from results DB)
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
