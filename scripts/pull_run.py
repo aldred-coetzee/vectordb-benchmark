@@ -251,11 +251,19 @@ Examples:
         report_path = output_dir / f"{base_name}.html"
         print(f"\nGenerating report: {report_path}")
 
-        cmd = [
-            sys.executable, "generate_report.py",
-            "--db-path", str(db_path),
-            "--output", str(report_path),
-        ]
+        if "tuning" in benchmark_type:
+            cmd = [
+                sys.executable, "generate_tuning_report.py",
+                "--db-path", str(db_path),
+                "--run-id", args.run_id,
+                "--benchmark-type", benchmark_type,
+            ]
+        else:
+            cmd = [
+                sys.executable, "generate_report.py",
+                "--db-path", str(db_path),
+                "--output", str(report_path),
+            ]
         result = subprocess.run(cmd)
         if result.returncode != 0:
             print("Error generating report", file=sys.stderr)
