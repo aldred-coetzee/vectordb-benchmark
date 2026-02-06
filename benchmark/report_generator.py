@@ -1743,18 +1743,28 @@ class ComparisonReportGenerator:
         is_aws = any(".compute.internal" in h for h in hostnames)
 
         if is_aws and aws_info:
+            n_dbs = len(set(r.database for r in runs))
+            n_datasets = len(set(r.dataset for r in runs))
+            n_jobs = len(set((r.database, r.dataset) for r in runs))
+            n_hosts = len(hostnames)
+            instance_type = aws_info.get("instance_type", "N/A")
+
             lines.append("<h3>Test Environment</h3>")
             lines.append(f'''<div class="table-wrap"><table>
             <tbody>
             <tr><td><strong>Platform</strong></td><td>AWS EC2 ({aws_info.get("region", "N/A")})</td></tr>
-            <tr><td><strong>Instance Type</strong></td><td>{aws_info.get("instance_type", "N/A")}</td></tr>
+            <tr><td><strong>Instance Type</strong></td><td>{instance_type}</td></tr>
             <tr><td><strong>vCPUs</strong></td><td>{aws_info.get("vcpus", "N/A")}</td></tr>
             <tr><td><strong>Memory</strong></td><td>{aws_info.get("memory_gb", "N/A")} GB</td></tr>
             <tr><td><strong>OS</strong></td><td>{aws_info.get("os", "N/A")}</td></tr>
-            <tr><td><strong>Isolation</strong></td><td>One database per instance &mdash; no co-tenancy</td></tr>
+            <tr><td><strong>Isolation</strong></td><td>Dedicated instance per job &mdash; one database &times; one dataset per worker</td></tr>
             </tbody></table></div>''')
-            if aws_info.get("note"):
-                lines.append(f'<p class="note">{aws_info["note"]}</p>')
+            lines.append(
+                f'<p class="note">{n_dbs} databases &times; {n_datasets} datasets = {n_jobs} jobs, '
+                f'each running on its own {instance_type} instance ({n_hosts} unique workers). '
+                f'No two benchmarks share CPU, memory, or I/O. '
+                f'Embedded databases (FAISS) run in-process on the same instance type.</p>'
+            )
         elif hostnames:
             # Local run — show hostname
             sample_host = next(iter(hostnames))

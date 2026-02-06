@@ -164,4 +164,3 @@ infrastructure:
     vcpus: 16
     memory_gb: 64
     os: "Amazon Linux 2023"
-    note: "Each database runs on a dedicated instance with Docker resource limits matching instance capacity. Embedded databases (FAISS) run in-process on the same instance type."
