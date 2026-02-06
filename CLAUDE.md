@@ -541,6 +541,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Auto report in S3**: Orchestrator now generates a merged report after all jobs complete and uploads `report.html` + `benchmark.db` to `s3://{bucket}/runs/{run_id}/`. Startup script installs pyyaml only (result dataclasses extracted to `benchmark/results.py` to break the `db.py` → `runner.py` → numpy/docker import chain).
 - **Docker launch commands in report**: The Benchmark Configuration section now includes a "Docker Launch Commands" subsection showing the exact `docker run` command for each client-server database. Built from config YAML `container` sections. Secrets/shell variables are redacted. Embedded databases (FAISS, LanceDB) are skipped.
 - **Test environment in report**: Benchmark Configuration starts with a "Test Environment" two-column table (Orchestrator vs Worker) showing role, instance type, vCPUs, memory, count, OS, region. Worker specs (vCPUs, memory, instance type) are dynamic from run data; orchestrator info from `benchmark.yaml` (not in results DB). Auto-detects AWS via `.compute.internal` hostnames; falls back to local hostname display. Repo link for reproducibility. Instance type stored in `runs.instance_type` column via EC2 IMDSv2 (1s timeout, `None` on non-EC2).
+- **Qdrant gRPC**: Switched from REST/JSON to gRPC (`prefer_grpc=True`). All operations (upsert, search, batch search) now use binary protobuf (~4 bytes/float instead of ~20 bytes JSON). Eliminates GIST payload size issues and makes benchmark fairer vs Milvus (also gRPC). Batch sizing updated to 50MB limit (gRPC max is 64MB).
 
 **Run 2026-02-05-1816** (6 DBs × sift + gist, excludes pgvector + LanceDB):
 - 12/16 jobs completed with data. Qdrant empty (bugs #12-14, fixed). LanceDB skipped (expected).
@@ -561,7 +562,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - User-data does `git pull` then runs local script to avoid GitHub CDN caching issues
 - Orchestrator self-tags with `vectordb-orchestrator-{run-id}` after generating run ID
 - Workers tagged with Name, Owner, Project, RunId, Database, Dataset at launch
-- Dimension-aware batch sizing: Qdrant (32MB HTTP), Milvus (64MB gRPC), KDB.AI (qIPC) each auto-calculate insert batch size based on vector dimensions
+- Dimension-aware batch sizing: Qdrant (64MB gRPC), Milvus (64MB gRPC), KDB.AI (qIPC) each auto-calculate insert batch size based on vector dimensions
 - Connection retry: 8 attempts with exponential backoff capped at 10s (total ~45s window)
 - KDB.AI performance: `THREADS` env var controls parallelism for qHNSW insert/search. `NUM_WRK` (worker processes) defaults to 1, correct for single-table benchmarks. Rule: `workers × threads <= cores`.
 

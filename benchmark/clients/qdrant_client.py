@@ -64,11 +64,15 @@ class QdrantClient(BaseVectorDBClient):
             host = endpoint
             port = 6333
 
+        grpc_port = kwargs.get("grpc_port", 6334)
         try:
-            self._client = QdrantSDK(host=host, port=port, timeout=300)
+            self._client = QdrantSDK(
+                host=host, port=port, grpc_port=grpc_port,
+                prefer_grpc=True, timeout=300,
+            )
             # Test connection by getting collections
             self._client.get_collections()
-            print(f"Connected to Qdrant at {host}:{port}")
+            print(f"Connected to Qdrant at {host}:{port} (gRPC port {grpc_port})")
         except Exception as e:
             raise ConnectionError(f"Failed to connect to Qdrant: {e}")
 
@@ -209,13 +213,11 @@ class QdrantClient(BaseVectorDBClient):
         ]
 
         try:
-            # Upsert in batches sized to stay under Qdrant's 32MB HTTP payload limit
-            # Qdrant uses JSON over HTTP — each float can be 5-20+ bytes in text
-            # SIFT (integer-like): ~5-8 bytes. GIST (long decimals): ~15-20 bytes.
-            # Use 20 bytes as conservative estimate to handle all datasets.
+            # Upsert in batches sized to stay under gRPC max message size (default 64MB).
+            # With prefer_grpc=True, vectors are sent as protobuf binary (~4 bytes/float).
             dims = len(vectors_list[0]) if vectors_list else 128
-            max_payload_bytes = 30_000_000  # 30MB conservative
-            bytes_per_point = dims * 20 + 200  # JSON-encoded float (up to ~20 bytes) + overhead
+            max_payload_bytes = 50_000_000  # 50MB conservative (gRPC max is 64MB)
+            bytes_per_point = dims * 4 + 100  # protobuf float32 (4 bytes) + overhead
             batch_size = max(100, min(10000, max_payload_bytes // bytes_per_point))
             for i in range(0, len(points), batch_size):
                 batch = points[i:i + batch_size]
@@ -300,10 +302,10 @@ class QdrantClient(BaseVectorDBClient):
         search_config: SearchConfig,
     ) -> List[SearchResult]:
         """
-        Batch search using Qdrant's search_batch() API.
+        Batch search using Qdrant's query_batch_points() API.
 
-        Sends all queries in a single HTTP request. Sub-batches if needed
-        to stay under 32MB JSON payload limit.
+        Sends all queries via gRPC. Sub-batches if needed
+        to stay under 64MB gRPC message size limit.
         """
         if self._client is None:
             raise RuntimeError("Not connected to database")
@@ -315,12 +317,12 @@ class QdrantClient(BaseVectorDBClient):
             ef_search = search_config.params.get("efSearch", 64)
             search_params = SearchParams(hnsw_ef=ef_search)
 
-        # Calculate sub-batch size to stay under 32MB JSON payload
-        # Also cap at 500 queries per sub-batch to avoid HTTP timeouts
+        # Calculate sub-batch size to stay under gRPC max message size (default 64MB).
+        # Also cap at 500 queries per sub-batch to avoid server-side timeouts
         # (FLAT search of 10K queries against 1M vectors can exceed default timeout)
         dims = query_vectors.shape[1]
-        max_payload_bytes = 30_000_000  # 30MB conservative
-        bytes_per_query = dims * 20 + 200  # JSON-encoded floats (up to ~20 bytes each)
+        max_payload_bytes = 50_000_000  # 50MB conservative (gRPC max is 64MB)
+        bytes_per_query = dims * 4 + 100  # protobuf float32 (4 bytes) + overhead
         payload_batch = max(10, max_payload_bytes // bytes_per_query)
         batch_size = min(len(query_vectors), payload_batch, 500)  # Cap at 500 for timeout safety
 
