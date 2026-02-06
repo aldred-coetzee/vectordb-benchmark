@@ -6,13 +6,15 @@
 # Launches worker instances, monitors progress, aggregates results.
 #
 # CONFIGURATION VIA INSTANCE TAGS (all optional — defaults from orchestrator.py):
-#   Databases   - Comma-separated list (default: all in DATABASES)
-#   Datasets    - Comma-separated list (default: all in DATASETS)
-#   PullLatest  - Docker images to refresh (default: none)
+#   Databases      - Comma-separated list (default: all in DATABASES)
+#   Datasets       - Comma-separated list (default: all in DATASETS)
+#   BenchmarkType  - S3 organization type (default: competitive)
+#   PullLatest     - Docker images to refresh (default: none)
 #
 # Example tags when launching:
 #   Databases = qdrant,milvus,kdbai
 #   Datasets = sift
+#   BenchmarkType = kdbai-tuning
 
 # =============================================================================
 # Configuration
@@ -38,11 +40,15 @@ get_tag() {
 DATABASES=$(get_tag "Databases")
 DATASETS=$(get_tag "Datasets")
 PULL_LATEST=$(get_tag "PullLatest")
+BENCHMARK_TYPE=$(get_tag "BenchmarkType")
 
 # Normalize "None" (AWS CLI returns literal "None" for missing tags)
 [ "$DATABASES" = "None" ] && DATABASES=""
 [ "$DATASETS" = "None" ] && DATASETS=""
 [ "$PULL_LATEST" = "None" ] && PULL_LATEST=""
+[ "$BENCHMARK_TYPE" = "None" ] && BENCHMARK_TYPE=""
+# Default benchmark type to competitive
+[ -z "$BENCHMARK_TYPE" ] && BENCHMARK_TYPE="competitive"
 
 # =============================================================================
 # Logging
@@ -52,6 +58,7 @@ exec > >(tee -a "$LOGFILE") 2>&1
 
 echo "========================================"
 echo "Orchestrator startup: $(date)"
+echo "Benchmark type: $BENCHMARK_TYPE"
 echo "Databases: $DATABASES"
 echo "Datasets: $DATASETS"
 echo "Pull latest: ${PULL_LATEST:-none}"
@@ -61,7 +68,7 @@ echo "========================================"
 # Auto-termination setup
 # =============================================================================
 RUN_ID=$(date +%Y-%m-%d-%H%M)
-S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${RUN_ID}"
+S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${BENCHMARK_TYPE}/${RUN_ID}"
 
 # Update instance Name tag to include run ID
 aws ec2 create-tags --resources $INSTANCE_ID \
@@ -108,7 +115,7 @@ cd /app/vectordb-benchmark
 
 # Build command with options
 # Only pass flags when tags are set — orchestrator.py defaults to all databases/datasets
-ORCHESTRATOR_ARGS="aws/orchestrator.py --run-id $RUN_ID"
+ORCHESTRATOR_ARGS="aws/orchestrator.py --run-id $RUN_ID --benchmark-type $BENCHMARK_TYPE"
 
 if [ -n "$DATABASES" ]; then
     ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --databases $DATABASES"

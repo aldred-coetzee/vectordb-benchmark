@@ -50,6 +50,7 @@ def create_user_data(
     database: str,
     dataset: str,
     run_id: str,
+    benchmark_type: str = "competitive",
     pull_latest: str = "",
 ) -> str:
     """Create user-data script for a worker instance."""
@@ -60,6 +61,7 @@ def create_user_data(
     script = script.replace("{{DATASET}}", dataset)
     script = script.replace("{{S3_BUCKET}}", S3_BUCKET)
     script = script.replace("{{RUN_ID}}", run_id)
+    script = script.replace("{{BENCHMARK_TYPE}}", benchmark_type)
     script = script.replace("{{PULL_LATEST}}", pull_latest)
 
     # Base64 encode for EC2 user-data
@@ -71,12 +73,13 @@ def launch_worker(
     database: str,
     dataset: str,
     run_id: str,
+    benchmark_type: str = "competitive",
     pull_latest: str = "",
     dry_run: bool = False,
 ) -> Optional[str]:
     """Launch a worker EC2 instance."""
 
-    user_data = create_user_data(database, dataset, run_id, pull_latest)
+    user_data = create_user_data(database, dataset, run_id, benchmark_type, pull_latest)
 
     instance_name = f"vectordb-worker-{database}-{dataset}-{run_id}"
 
@@ -122,9 +125,11 @@ def launch_worker(
         return None
 
 
-def check_job_status(s3_client, run_id: str, database: str, dataset: str) -> str:
+def check_job_status(
+    s3_client, run_id: str, database: str, dataset: str, benchmark_type: str = "competitive",
+) -> str:
     """Check the status of a job from S3."""
-    key = f"runs/{run_id}/jobs/{database}-{dataset}/status.json"
+    key = f"runs/{benchmark_type}/{run_id}/jobs/{database}-{dataset}/status.json"
     try:
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
         status = json.loads(response["Body"].read().decode())
@@ -139,6 +144,7 @@ def wait_for_completion(
     s3_client,
     run_id: str,
     jobs: list[tuple[str, str]],
+    benchmark_type: str = "competitive",
     timeout_minutes: int = 180,
 ) -> dict:
     """Wait for all jobs to complete and return status summary."""
@@ -157,7 +163,7 @@ def wait_for_completion(
             if results[(database, dataset)] in ("completed", "failed", "skipped"):
                 continue
 
-            status = check_job_status(s3_client, run_id, database, dataset)
+            status = check_job_status(s3_client, run_id, database, dataset, benchmark_type)
             results[(database, dataset)] = status
 
             if status == "pending":
@@ -187,12 +193,14 @@ def wait_for_completion(
 def generate_and_upload_report(
     s3_client,
     run_id: str,
+    benchmark_type: str,
     num_completed: int,
 ) -> bool:
     """Download per-job results, merge, generate report, and upload to S3.
 
     Uses scripts/pull_run.py to download and merge per-job databases,
     then uploads the merged DB and HTML report back to S3.
+    Reports are also copied to a flat reports/ prefix for easy browsing.
     """
     if num_completed == 0:
         print("\nNo completed jobs — skipping report generation.")
@@ -204,17 +212,25 @@ def generate_and_upload_report(
 
     # pull_run.py handles: S3 download → merge → report generation
     result = subprocess.run(
-        [sys.executable, "scripts/pull_run.py", run_id, "--output-dir", "results"],
+        [sys.executable, "scripts/pull_run.py", run_id,
+         "--benchmark-type", benchmark_type,
+         "--output-dir", "results"],
     )
 
     if result.returncode != 0:
         print("ERROR: Report generation failed")
         return False
 
+    # File naming: vectordb-benchmark-{type}-{run_id}.ext
+    base_name = f"vectordb-benchmark-{benchmark_type}-{run_id}"
+    run_prefix = f"runs/{benchmark_type}/{run_id}"
+
     # Upload combined report and merged DB to S3
+    # Each file goes to its run directory + the report HTML also to reports/
     uploads: list[tuple[str, str, str]] = [
-        (f"results/benchmark-{run_id}.db", f"runs/{run_id}/benchmark.db", "application/octet-stream"),
-        (f"results/report-{run_id}.html", f"runs/{run_id}/report.html", "text/html"),
+        (f"results/{base_name}.db", f"{run_prefix}/{base_name}.db", "application/octet-stream"),
+        (f"results/{base_name}.html", f"{run_prefix}/{base_name}.html", "text/html"),
+        (f"results/{base_name}.html", f"reports/{base_name}.html", "text/html"),
     ]
 
     for local_path, s3_key, content_type in uploads:
@@ -227,7 +243,7 @@ def generate_and_upload_report(
         else:
             print(f"  WARNING: {local_path} not found, skipping upload")
 
-    print(f"\nReports: s3://{S3_BUCKET}/runs/{run_id}/")
+    print(f"\nReports: s3://{S3_BUCKET}/{run_prefix}/")
     return True
 
 
@@ -265,6 +281,11 @@ def main():
         help="Print what would be launched without actually launching",
     )
     parser.add_argument(
+        "--benchmark-type", "-t",
+        default="competitive",
+        help="Benchmark type for S3 organization (default: competitive)",
+    )
+    parser.add_argument(
         "--no-wait",
         action="store_true",
         help="Launch workers and exit without waiting for completion",
@@ -282,6 +303,7 @@ def main():
     databases = [d.strip() for d in args.databases.split(",")]
     datasets = [d.strip() for d in args.datasets.split(",")]
     run_id = args.run_id or generate_run_id()
+    benchmark_type = args.benchmark_type
 
     # Validate
     for db in databases:
@@ -297,6 +319,7 @@ def main():
     print("VECTORDB BENCHMARK ORCHESTRATOR")
     print("=" * 60)
     print(f"Run ID:     {run_id}")
+    print(f"Type:       {benchmark_type}")
     print(f"Databases:  {', '.join(databases)}")
     print(f"Datasets:   {', '.join(datasets)}")
     print(f"Pull latest: {args.pull_latest or 'none'}")
@@ -320,9 +343,11 @@ def main():
     s3_client = session.client("s3")
 
     # Create run config in S3
+    run_prefix = f"runs/{benchmark_type}/{run_id}"
     if not args.dry_run:
         run_config = {
             "run_id": run_id,
+            "benchmark_type": benchmark_type,
             "databases": databases,
             "datasets": datasets,
             "pull_latest": args.pull_latest,
@@ -331,11 +356,11 @@ def main():
         }
         s3_client.put_object(
             Bucket=S3_BUCKET,
-            Key=f"runs/{run_id}/config.json",
+            Key=f"{run_prefix}/config.json",
             Body=json.dumps(run_config, indent=2),
             ContentType="application/json",
         )
-        print(f"\nRun config saved to s3://{S3_BUCKET}/runs/{run_id}/config.json")
+        print(f"\nRun config saved to s3://{S3_BUCKET}/{run_prefix}/config.json")
 
     # Launch workers
     print("\nLaunching workers...")
@@ -347,6 +372,7 @@ def main():
             database,
             dataset,
             run_id,
+            benchmark_type=benchmark_type,
             pull_latest=args.pull_latest,
             dry_run=args.dry_run,
         )
@@ -361,11 +387,11 @@ def main():
 
     if args.no_wait:
         print("\n--no-wait specified, exiting without waiting.")
-        print(f"Check results at: s3://{S3_BUCKET}/runs/{run_id}/")
+        print(f"Check results at: s3://{S3_BUCKET}/{run_prefix}/")
         return 0
 
     # Wait for completion
-    results = wait_for_completion(s3_client, run_id, jobs, args.timeout)
+    results = wait_for_completion(s3_client, run_id, jobs, benchmark_type, args.timeout)
 
     # Summary
     print("\n" + "=" * 60)
@@ -395,9 +421,9 @@ def main():
 
     # Generate merged report and upload to S3
     if completed:
-        generate_and_upload_report(s3_client, run_id, len(completed))
+        generate_and_upload_report(s3_client, run_id, benchmark_type, len(completed))
 
-    print(f"\nResults: s3://{S3_BUCKET}/runs/{run_id}/")
+    print(f"\nResults: s3://{S3_BUCKET}/{run_prefix}/")
 
     return 0 if not failed and not pending else 1
 

@@ -18,6 +18,7 @@ DATABASE="{{DATABASE}}"           # e.g., qdrant, milvus, kdbai
 DATASET="{{DATASET}}"             # e.g., sift, gist
 S3_BUCKET="{{S3_BUCKET}}"         # e.g., vectordb-benchmark-590780615264
 RUN_ID="{{RUN_ID}}"               # e.g., 2026-02-04-1430
+BENCHMARK_TYPE="{{BENCHMARK_TYPE}}" # e.g., competitive, kdbai-tuning
 PULL_LATEST="{{PULL_LATEST}}"     # e.g., "" or "kdbai" or "all"
 MAX_RUNTIME_MINUTES=120           # Safety timeout
 
@@ -37,7 +38,7 @@ echo "========================================"
 # =============================================================================
 # Auto-termination setup (set up EARLY to catch all exits)
 # =============================================================================
-S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${RUN_ID}/jobs/${DATABASE}-${DATASET}"
+S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${BENCHMARK_TYPE}/${RUN_ID}/jobs/${DATABASE}-${DATASET}"
 
 cleanup() {
     EXIT_CODE=$?

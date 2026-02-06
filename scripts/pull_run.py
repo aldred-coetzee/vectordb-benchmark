@@ -35,9 +35,9 @@ def s3_cmd(args: list[str]) -> subprocess.CompletedProcess:
     return result
 
 
-def list_jobs(run_id: str) -> list[str]:
+def list_jobs(run_id: str, benchmark_type: str = "competitive") -> list[str]:
     """List all jobs for a run from S3."""
-    result = s3_cmd(["ls", f"s3://{S3_BUCKET}/runs/{run_id}/jobs/"])
+    result = s3_cmd(["ls", f"s3://{S3_BUCKET}/runs/{benchmark_type}/{run_id}/jobs/"])
     if result.returncode != 0:
         print(f"Error listing jobs: {result.stderr}", file=sys.stderr)
         sys.exit(1)
@@ -50,17 +50,17 @@ def list_jobs(run_id: str) -> list[str]:
     return jobs
 
 
-def get_job_status(run_id: str, job: str) -> dict:
+def get_job_status(run_id: str, job: str, benchmark_type: str = "competitive") -> dict:
     """Get the status of a job from S3."""
-    result = s3_cmd(["cp", f"s3://{S3_BUCKET}/runs/{run_id}/jobs/{job}/status.json", "-"])
+    result = s3_cmd(["cp", f"s3://{S3_BUCKET}/runs/{benchmark_type}/{run_id}/jobs/{job}/status.json", "-"])
     if result.returncode != 0:
         return {"status": "unknown"}
     return json.loads(result.stdout)
 
 
-def download_job_db(run_id: str, job: str, dest: str) -> bool:
+def download_job_db(run_id: str, job: str, dest: str, benchmark_type: str = "competitive") -> bool:
     """Download benchmark.db for a job."""
-    result = s3_cmd(["cp", f"s3://{S3_BUCKET}/runs/{run_id}/jobs/{job}/benchmark.db", dest])
+    result = s3_cmd(["cp", f"s3://{S3_BUCKET}/runs/{benchmark_type}/{run_id}/jobs/{job}/benchmark.db", dest])
     return result.returncode == 0
 
 
@@ -161,11 +161,14 @@ def main():
         epilog="""
 Examples:
     python scripts/pull_run.py 2026-02-05-1816
+    python scripts/pull_run.py 2026-02-05-1816 --benchmark-type kdbai-tuning
     python scripts/pull_run.py 2026-02-05-1816 --no-report
         """,
     )
 
     parser.add_argument("run_id", help="Orchestrator run ID (e.g., 2026-02-05-1816)")
+    parser.add_argument("--benchmark-type", "-t", default="competitive",
+                        help="Benchmark type (default: competitive)")
     parser.add_argument("--no-report", action="store_true",
                         help="Only download and merge, skip report generation")
     parser.add_argument("--output-dir", default="results",
@@ -173,12 +176,16 @@ Examples:
 
     args = parser.parse_args()
     run_id = args.run_id
+    benchmark_type = args.benchmark_type
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # File naming: vectordb-benchmark-{type}-{run_id}.ext
+    base_name = f"vectordb-benchmark-{benchmark_type}-{run_id}"
+
     # 1. List jobs
-    print(f"Pulling results for run {run_id}...")
-    jobs = list_jobs(run_id)
+    print(f"Pulling results for run {run_id} (type: {benchmark_type})...")
+    jobs = list_jobs(run_id, benchmark_type)
     if not jobs:
         print(f"No jobs found for run {run_id}", file=sys.stderr)
         sys.exit(1)
@@ -191,12 +198,12 @@ Examples:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         for job in sorted(jobs):
-            status = get_job_status(run_id, job)
+            status = get_job_status(run_id, job, benchmark_type)
             s = status.get("status", "unknown")
 
             if s == "completed":
                 dest = os.path.join(tmpdir, f"{job}.db")
-                if download_job_db(run_id, job, dest):
+                if download_job_db(run_id, job, dest, benchmark_type):
                     # Verify it has actual data
                     conn = sqlite3.connect(dest)
                     count = conn.execute("SELECT COUNT(*) FROM search_results").fetchone()[0]
@@ -227,7 +234,7 @@ Examples:
             sys.exit(1)
 
         # 3. Merge
-        db_path = output_dir / f"benchmark-{run_id}.db"
+        db_path = output_dir / f"{base_name}.db"
         print(f"\nMerging {len(completed)} jobs into {db_path}...")
         merge_databases(completed, str(db_path), run_id)
 
@@ -241,7 +248,7 @@ Examples:
 
     # 5. Generate combined report (with charts)
     if not args.no_report:
-        report_path = output_dir / f"report-{run_id}.html"
+        report_path = output_dir / f"{base_name}.html"
         print(f"\nGenerating report: {report_path}")
 
         cmd = [
@@ -257,7 +264,7 @@ Examples:
     print(f"\nDone!")
     print(f"  Database: {db_path}")
     if not args.no_report:
-        print(f"  Report:   {output_dir}/report-{run_id}.html")
+        print(f"  Report:   {report_path}")
 
 
 if __name__ == "__main__":

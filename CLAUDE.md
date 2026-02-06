@@ -88,6 +88,7 @@ python run_all.py
 
 # Pull AWS run results and generate report
 python scripts/pull_run.py 2026-02-05-1816
+python scripts/pull_run.py 2026-02-05-1816 --benchmark-type kdbai-tuning
 
 # Generate report from existing merged DB
 python generate_report.py --run-id 2026-02-05-1816
@@ -353,26 +354,34 @@ Worker AMI (v2) contains:
 
 ### S3 Structure
 
+Runs are organized by benchmark type (`competitive`, `kdbai-tuning`, etc.). Reports use self-describing filenames so they make sense when downloaded: `vectordb-benchmark-{type}-{run_id}.html/.db`.
+
 ```
 s3://vectordb-benchmark-590780615264/
-  config/
+  config/                                                    # Shared credentials
     kc.lic                 # KDB.AI license (encrypted, fetched at startup)
     docker-config.json     # Docker registry credentials for KDB.AI (encrypted)
-  runs/
-    2024-02-03-1430/
-      config.json          # What to run (databases, datasets, timeouts)
-      status.json          # Live status (updated by orchestrator)
-      report.html          # Final report (when complete)
-      jobs/
-        qdrant-sift1m/
-          status.json      # pending|running|completed|failed
-          heartbeat.txt    # Last heartbeat timestamp
-          result.json      # Benchmark results
-          error.log        # If failed
-        qdrant-gist1m/
-          ...
-        milvus-sift1m/
-          ...
+
+  reports/                                                   # All reports, flat
+    vectordb-benchmark-competitive-2026-02-06-1430.html
+    vectordb-benchmark-kdbai-tuning-2026-02-08-1200.html
+
+  runs/                                                      # Raw data, by type
+    competitive/
+      2026-02-06-1430/
+        config.json          # What to run (databases, datasets, timeouts)
+        vectordb-benchmark-competitive-2026-02-06-1430.db
+        vectordb-benchmark-competitive-2026-02-06-1430.html
+        orchestrator.log
+        jobs/
+          qdrant-sift/
+            status.json      # pending|running|completed|failed
+            benchmark.db     # Per-job results
+            worker.log       # Worker stdout/stderr
+
+    kdbai-tuning/
+      2026-02-08-1200/
+        ...
 ```
 
 ### CLI Interface
@@ -540,9 +549,9 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **LanceDB excluded**: Does not support pure HNSW or FLAT — only IVF-based indexes (IVF_PQ, IVF_HNSW_SQ, IVF_HNSW_PQ). Previous results used IVF_HNSW_SQ disguised as HNSW, producing unfairly low QPS (65 vs FAISS 2,403). Now excluded via `supported_indexes = set()`. Will be re-added when IVF-PQ benchmarks are implemented.
 - **Redis persistence**: Corrected from `disk` to `memory`. Redis operates entirely in-memory — RDB snapshots are background-only and don't affect benchmark performance.
 - **Skipped job status**: Databases with no supported indexes (LanceDB) now get `status: skipped` instead of `failed`. Worker handles missing results dir gracefully, orchestrator shows skipped separately.
-- **pull_run.py**: Single command to pull AWS run results from S3, merge per-job DBs, and generate a named report. Usage: `python scripts/pull_run.py 2026-02-05-1816`. Output: `results/benchmark-{run_id}.db` + `results/report-{run_id}.html`. All merged runs share a `run_label` column for traceability.
+- **pull_run.py**: Single command to pull AWS run results from S3, merge per-job DBs, and generate a named report. Usage: `python scripts/pull_run.py 2026-02-05-1816 [--benchmark-type competitive]`. Output: `results/vectordb-benchmark-{type}-{run_id}.db` + `.html`. All merged runs share a `run_label` column for traceability.
 - **Batch search resilience**: Batch search failures are now non-fatal — sequential results are preserved even if batch search times out or errors (bugs #12-14).
-- **Auto report in S3**: Orchestrator now generates a merged report after all jobs complete and uploads `report.html` + `benchmark.db` to `s3://{bucket}/runs/{run_id}/`. Startup script installs pyyaml only (result dataclasses extracted to `benchmark/results.py` to break the `db.py` → `runner.py` → numpy/docker import chain).
+- **Auto report in S3**: Orchestrator now generates a merged report after all jobs complete and uploads to `s3://{bucket}/runs/{type}/{run_id}/` plus a copy of the HTML to `s3://{bucket}/reports/` for easy browsing. Startup script installs pyyaml only (result dataclasses extracted to `benchmark/results.py` to break the `db.py` → `runner.py` → numpy/docker import chain).
 - **Docker launch commands in report**: The Benchmark Configuration section now includes a "Docker Launch Commands" subsection showing the exact `docker run` command for each client-server database. Built from config YAML `container` sections. Secrets/shell variables are redacted. Embedded databases (FAISS, LanceDB) are skipped.
 - **Test environment in report**: Benchmark Configuration starts with a "Test Environment" two-column table (Orchestrator vs Worker) showing role, instance type, vCPUs, memory, count, OS, region. Worker specs (vCPUs, memory, instance type) are dynamic from run data; orchestrator info from `benchmark.yaml` (not in results DB). Auto-detects AWS via `.compute.internal` hostnames; falls back to local hostname display. Repo link for reproducibility. Instance type stored in `runs.instance_type` column via EC2 IMDSv2 (1s timeout, `None` on non-EC2).
 - **Qdrant gRPC**: Switched from REST/JSON to gRPC (`prefer_grpc=True`). All operations (upsert, search, batch search) now use binary protobuf (~4 bytes/float instead of ~20 bytes JSON). Eliminates GIST payload size issues and makes benchmark fairer vs Milvus (also gRPC). Batch sizing updated to 50MB limit (gRPC max is 64MB).
@@ -601,6 +610,7 @@ One Launch Template: `vectordb-benchmark-full` (version 12)
 |-----|---------|-------------|
 | `Databases` | all (from `DATABASES` in orchestrator.py) | Comma-separated list — remove entries to run a subset |
 | `Datasets` | all (from `DATASETS` in orchestrator.py) | Comma-separated list — remove entries to run a subset |
+| `BenchmarkType` | `competitive` | S3 organization: `competitive`, `kdbai-tuning`, etc. |
 
 Tags are pre-filled with all values. To run a subset, just delete entries at launch time. `PullLatest` can be added manually when needed (see Future Enhancements).
 
@@ -622,6 +632,9 @@ aws sso login --profile vectordb
 
 # KDB.AI release comparison (pull fresh image)
 python aws/orchestrator.py --databases kdbai,qdrant,milvus --pull-latest kdbai --datasets sift
+
+# KDB.AI tuning benchmark (different S3 path)
+python aws/orchestrator.py --databases kdbai --benchmark-type kdbai-tuning
 
 # Quick single-DB test
 python aws/orchestrator.py --databases qdrant --datasets sift
