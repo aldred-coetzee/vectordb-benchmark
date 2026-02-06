@@ -166,6 +166,22 @@ class TuningReportGenerator:
         for r in ingest_results:
             self.ingest_by_dataset.setdefault(r.dataset, []).append(r)
 
+        # Build recall lookup for imputation: (M, efC, dataset) -> recall
+        # Threading doesn't affect recall, so we can fill missing recall from
+        # any docker config with the same HNSW params. Uses the median value
+        # across available docker configs for robustness.
+        self._recall_lookup: Dict[Tuple[int, int, str], float] = {}
+        recall_by_hnsw: Dict[Tuple[int, int, str], List[float]] = {}
+        for r in search_results:
+            if r.index_only or r.ef_search != self.REFERENCE_EF:
+                continue
+            if r.M is not None and r.efC is not None and r.recall_at_10:
+                key = (r.M, r.efC, r.dataset)
+                recall_by_hnsw.setdefault(key, []).append(r.recall_at_10)
+        for key, values in recall_by_hnsw.items():
+            values.sort()
+            self._recall_lookup[key] = values[len(values) // 2]  # median
+
     def generate(self) -> str:
         """Generate complete HTML report."""
         sections: List[str] = []
@@ -193,18 +209,34 @@ class TuningReportGenerator:
             ({', '.join(self.datasets)})
         </p>"""
 
+    def _get_recall(self, M: Optional[int], efC: Optional[int], dataset: str,
+                     actual: Optional[float] = None) -> Tuple[Optional[float], bool]:
+        """Get recall for a config, imputing from same-HNSW params if missing.
+
+        Returns (recall_value, was_imputed). Threading doesn't affect recall,
+        so missing values can be filled from any docker config with the same M/efC.
+        """
+        if actual:
+            return actual, False
+        if M is not None and efC is not None:
+            imputed = self._recall_lookup.get((M, efC, dataset))
+            if imputed:
+                return imputed, True
+        return None, False
+
     def _render_summary_table(self) -> str:
         """All configs ranked by recall@10 at reference efSearch."""
         lines: List[str] = []
         lines.append("<h2>Summary: All Configurations at efSearch=128</h2>")
         lines.append('<p class="note">Sorted by average Recall@10 across datasets (descending). '
-                      'Only non-indexOnly results shown.</p>')
+                      'Missing recall values imputed from same HNSW params with different threading '
+                      '(threading does not affect recall). Only non-indexOnly results shown.</p>')
 
         # Header
         header = "<tr><th>Config</th><th>M</th><th>efC</th><th>Docker</th>"
         for ds in self.datasets:
             header += f"<th>{ds} R@10</th><th>{ds} QPS</th>"
-        header += "<th>Avg R@10</th><th>Avg QPS</th></tr>"
+        header += "<th>Avg R@10</th><th>Avg QPS</th><th>Data</th></tr>"
 
         # Collect data per unique config
         configs: Dict[str, Dict[str, TuningResult]] = {}
@@ -214,12 +246,25 @@ class TuningReportGenerator:
             key = f"M{r.M}_efC{r.efC}_{r.docker_config or 'default'}"
             configs.setdefault(key, {})[r.dataset] = r
 
-        # Sort by avg recall
-        sorted_configs = sorted(
-            configs.items(),
-            key=lambda kv: _avg([r.recall_at_10 for r in kv[1].values() if r.recall_at_10]),
-            reverse=True,
-        )
+        # Sort by avg recall WITH imputation.
+        # Configs with data for all datasets rank above those with gaps.
+        def _sort_key(kv):
+            key, ds_results = kv
+            sample = next(iter(ds_results.values()))
+            recalls = []
+            for ds in self.datasets:
+                r = ds_results.get(ds)
+                recall, _ = self._get_recall(
+                    sample.M, sample.efC, ds,
+                    r.recall_at_10 if r else None,
+                )
+                if recall:
+                    recalls.append(recall)
+            # Primary: completeness (more datasets = better), secondary: avg recall
+            completeness = len(recalls) / len(self.datasets) if self.datasets else 0
+            return (completeness, _avg(recalls))
+
+        sorted_configs = sorted(configs.items(), key=_sort_key, reverse=True)
 
         # Find best recall per dataset for highlighting
         best_recall = {}
@@ -232,21 +277,41 @@ class TuningReportGenerator:
         rows = []
         for key, ds_results in sorted_configs:
             sample = next(iter(ds_results.values()))
-            avg_r = _avg([r.recall_at_10 for r in ds_results.values() if r.recall_at_10])
-            avg_qps = _avg([r.qps for r in ds_results.values()])
+            actual_count = 0
+            imputed_count = 0
+            recall_values = []
 
             row = f"<tr><td><strong>{key}</strong></td>"
             row += f"<td>{sample.M}</td><td>{sample.efC}</td><td>{sample.docker_config or 'default'}</td>"
 
             for ds in self.datasets:
                 r = ds_results.get(ds)
-                if r:
-                    r10_class = ' class="rank-top"' if r.recall_at_10 and abs(r.recall_at_10 - best_recall.get(ds, 0)) < 0.001 else ''
+                recall, was_imputed = self._get_recall(
+                    sample.M, sample.efC, ds,
+                    r.recall_at_10 if r else None,
+                )
+
+                if r and r.recall_at_10:
+                    actual_count += 1
+                    recall_values.append(r.recall_at_10)
+                    r10_class = ' class="rank-top"' if abs(r.recall_at_10 - best_recall.get(ds, 0)) < 0.001 else ''
                     row += f"<td{r10_class}>{r.recall_at_10:.4f}</td><td>{r.qps:,.0f}</td>"
+                elif was_imputed:
+                    imputed_count += 1
+                    recall_values.append(recall)
+                    # Show imputed values in italics with a marker
+                    row += f'<td style="font-style:italic; color:#6b7280">{recall:.4f}*</td><td>-</td>'
                 else:
                     row += "<td>-</td><td>-</td>"
 
-            row += f"<td><strong>{avg_r:.4f}</strong></td><td><strong>{avg_qps:,.0f}</strong></td></tr>"
+            avg_r = _avg(recall_values)
+            avg_qps = _avg([r.qps for r in ds_results.values()])
+            data_label = f"{actual_count}/{len(self.datasets)}"
+            if imputed_count:
+                data_label += f" (+{imputed_count})"
+
+            row += f"<td><strong>{avg_r:.4f}</strong></td><td><strong>{avg_qps:,.0f}</strong></td>"
+            row += f"<td>{data_label}</td></tr>"
             rows.append(row)
 
         table = f"""
@@ -258,6 +323,8 @@ class TuningReportGenerator:
         </div>"""
 
         lines.append(table)
+        lines.append('<p class="note">Data column: actual/total datasets (+imputed). '
+                      'Values marked with * are imputed from the same M/efC with a different threading config.</p>')
         return "\n".join(lines)
 
     def _render_pareto_charts(self) -> str:
@@ -582,29 +649,48 @@ class TuningReportGenerator:
         return "\n".join(lines)
 
     def _render_recommendation(self) -> str:
-        """Recommend best config based on recall target."""
+        """Recommend best config based on recall target (with imputation)."""
         lines: List[str] = []
         lines.append("<h2>Recommendation</h2>")
 
-        # Find config with best average recall at efSearch=128
-        config_stats: Dict[str, Dict[str, List[float]]] = {}
+        # Find config with best average recall at efSearch=128, using imputed values
+        config_stats: Dict[str, Dict[str, Any]] = {}
         for r in self.search_results:
             if r.index_only or r.ef_search != self.REFERENCE_EF:
                 continue
             key = f"M{r.M}_efC{r.efC}_{r.docker_config or 'default'}"
-            config_stats.setdefault(key, {"recalls": [], "qps": []})
-            if r.recall_at_10:
-                config_stats[key]["recalls"].append(r.recall_at_10)
+            config_stats.setdefault(key, {"M": r.M, "efC": r.efC, "recalls": [], "qps": []})
             config_stats[key]["qps"].append(r.qps)
+
+        # Build recall lists with imputation for fair comparison
+        for key, stats in config_stats.items():
+            M, efC = stats["M"], stats["efC"]
+            # Collect actual results for this config
+            actual_results = {}
+            for r in self.search_results:
+                if r.index_only or r.ef_search != self.REFERENCE_EF:
+                    continue
+                if f"M{r.M}_efC{r.efC}_{r.docker_config or 'default'}" == key:
+                    if r.recall_at_10:
+                        actual_results[r.dataset] = r.recall_at_10
+
+            # For each dataset, use actual or imputed recall
+            for ds in self.datasets:
+                recall, _ = self._get_recall(M, efC, ds, actual_results.get(ds))
+                if recall:
+                    stats["recalls"].append(recall)
 
         if not config_stats:
             lines.append("<p>No data available for recommendation.</p>")
             return "\n".join(lines)
 
-        # Sort by avg recall
+        # Sort by avg recall (now using imputed values).
+        # Configs with data for all datasets rank above those with gaps.
+        n_datasets = len(self.datasets)
         ranked = sorted(
             config_stats.items(),
-            key=lambda kv: _avg(kv[1]["recalls"]),
+            key=lambda kv: (len(kv[1]["recalls"]) / n_datasets if n_datasets else 0,
+                            _avg(kv[1]["recalls"])),
             reverse=True,
         )
 
@@ -617,12 +703,26 @@ class TuningReportGenerator:
         baseline_recall = _avg(config_stats[baseline_key]["recalls"]) if baseline_key else 0
         baseline_qps = _avg(config_stats[baseline_key]["qps"]) if baseline_key else 0
 
+        # Count how many datasets have no data at all (not even imputable) for best config
+        n_imputed = len(best_stats["recalls"]) - sum(
+            1 for r in self.search_results
+            if not r.index_only and r.ef_search == self.REFERENCE_EF
+            and f"M{r.M}_efC{r.efC}_{r.docker_config or 'default'}" == best_key
+            and r.recall_at_10
+        )
+
+        caveat = ""
+        if n_imputed > 0:
+            caveat = (f"<li><em>Note: {n_imputed} of {len(self.datasets)} dataset recall values "
+                      f"were imputed from the same HNSW params with different threading.</em></li>")
+
         lines.append(f"""
         <div class="caveat-box">
         <strong>Best configuration: {best_key}</strong>
         <ul>
             <li>Average Recall@10: {best_recall:.4f} (vs baseline {baseline_recall:.4f}, +{(best_recall - baseline_recall):.4f})</li>
             <li>Average QPS: {best_qps:,.0f} (vs baseline {baseline_qps:,.0f})</li>
+            {caveat}
         </ul>
         <p>This configuration should be used in the next competitive benchmark to see if it
         closes the recall gap with Qdrant.</p>
@@ -630,11 +730,13 @@ class TuningReportGenerator:
 
         # Also show top 3
         lines.append("<h3>Top 3 Configurations</h3>")
-        lines.append('<table><thead><tr><th>Rank</th><th>Config</th><th>Avg R@10</th><th>Avg QPS</th></tr></thead><tbody>')
+        lines.append('<table><thead><tr><th>Rank</th><th>Config</th><th>Avg R@10</th><th>Avg QPS</th>'
+                      '<th>Datasets</th></tr></thead><tbody>')
         for i, (key, stats) in enumerate(ranked[:3], 1):
             r = _avg(stats["recalls"])
             q = _avg(stats["qps"])
-            lines.append(f'<tr><td>{i}</td><td>{key}</td><td>{r:.4f}</td><td>{q:,.0f}</td></tr>')
+            lines.append(f'<tr><td>{i}</td><td>{key}</td><td>{r:.4f}</td><td>{q:,.0f}</td>'
+                         f'<td>{len(stats["recalls"])}/{len(self.datasets)}</td></tr>')
         lines.append('</tbody></table>')
 
         return "\n".join(lines)

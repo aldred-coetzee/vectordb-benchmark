@@ -67,10 +67,14 @@ cleanup() {
     # Upload log file even on failure
     aws s3 cp "$LOGFILE" ${S3_RESULT_PATH}/worker.log --region us-west-2 || true
 
-    # Mark as failed if non-zero exit
+    # Only set failed status if no status.json was uploaded yet (i.e., crash before
+    # the results upload section). If results were already uploaded, don't overwrite.
     if [ $EXIT_CODE -ne 0 ]; then
-        echo "{\"status\": \"failed\", \"exit_code\": $EXIT_CODE}" | \
-            aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2 || true
+        aws s3api head-object --bucket ${S3_BUCKET} --key "runs/${BENCHMARK_TYPE}/${RUN_ID}/jobs/${JOB_NAME}/status.json" --region us-west-2 2>/dev/null
+        if [ $? -ne 0 ]; then
+            echo "{\"status\": \"failed\", \"exit_code\": $EXIT_CODE}" | \
+                aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2 || true
+        fi
     fi
 
     echo "Shutting down..."
@@ -209,23 +213,39 @@ echo "Running: $BENCHMARK_CMD"
 
 # Run as ec2-user (who has the Python dependencies installed)
 # -E preserves environment (needed for KDB_LICENSE_B64, THREADS, NUM_WRK)
+# Capture exit code without letting set -e kill the script — results may
+# exist even if cleanup (e.g., docker container.stop()) fails with exit code 1
+set +e
 sudo -E -u ec2-user python3.12 $BENCHMARK_CMD
-
 BENCHMARK_EXIT_CODE=$?
+set -e
+
 echo "Benchmark completed with exit code: $BENCHMARK_EXIT_CODE"
 
 # =============================================================================
-# Upload results to S3
+# Upload results to S3 (BEFORE any cleanup that might fail)
 # =============================================================================
 echo "Uploading results to S3..."
 
-# Upload result files and set status based on what was produced
+# Upload result files regardless of exit code — benchmark.db may exist
+# even when exit code is non-zero (e.g., docker stop timeout after benchmark completes)
 if [ -d results/ ] && [ "$(ls -A results/)" ]; then
     aws s3 cp results/ ${S3_RESULT_PATH}/ --recursive --region us-west-2
-    echo '{"status": "completed"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
+    if [ $BENCHMARK_EXIT_CODE -eq 0 ]; then
+        echo '{"status": "completed"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
+    else
+        echo "{\"status\": \"completed\", \"warning\": \"exit code $BENCHMARK_EXIT_CODE but results uploaded\"}" | \
+            aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
+        echo "WARNING: Benchmark exited with code $BENCHMARK_EXIT_CODE but results were produced and uploaded"
+    fi
 else
-    echo "No results produced (database may not support requested index types)"
-    echo '{"status": "skipped", "reason": "no results produced"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
+    if [ $BENCHMARK_EXIT_CODE -ne 0 ]; then
+        echo "{\"status\": \"failed\", \"exit_code\": $BENCHMARK_EXIT_CODE}" | \
+            aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
+    else
+        echo "No results produced (database may not support requested index types)"
+        echo '{"status": "skipped", "reason": "no results produced"}' | aws s3 cp - ${S3_RESULT_PATH}/status.json --region us-west-2
+    fi
 fi
 
 echo "========================================"
