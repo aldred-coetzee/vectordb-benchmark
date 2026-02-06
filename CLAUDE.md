@@ -499,7 +499,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - [ ] Run clean full benchmark suite (all 9 DBs × sift + gist)
 - [ ] Generate comparison report from results
 - [ ] Add SIFT-10M support (`.bvecs` format - needs `read_bvecs()` in data_loader.py)
-- [ ] Add GloVe-100 support (HDF5 format - needs h5py)
+- [x] Add GloVe-100 + DBpedia-OpenAI support (HDF5 format — h5py + datasets baked into Worker AMI v2)
 - [ ] (Optional) Streamlit UI if team usage increases
 
 ### Bugs Fixed (from AWS test runs 2026-02-05)
@@ -641,7 +641,7 @@ python aws/orchestrator.py --no-wait
 9. ~~**Fix Benchmark Code Bugs**~~ ✓ — All 9 bugs fixed, all 9 DBs pass on sift-dev
 10. **Run Clean Full Benchmark** — All 9 DBs × sift + gist (run 2026-02-05-1047 in progress but uses old code/instance type)
 11. **Generate Comparison Report** — From S3 results
-12. **Later Enhancements** — SIFT-10M (.bvecs), GloVe-100 (HDF5), `run_aws.py` CLI, Web UI
+12. **Later Enhancements** — SIFT-10M (.bvecs), `run_aws.py` CLI, Web UI
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
@@ -666,7 +666,7 @@ Design consideration: Keep dataset/query loading modular so filtered queries can
 
 - **Texmex (.fvecs/.ivecs)**: Supported — SIFT-1M, GIST-1M
 - **Texmex (.bvecs)**: NOT YET SUPPORTED — SIFT-10M uses byte vectors, needs `read_bvecs()` function
-- **ANN-Benchmarks (HDF5)**: Supported — GloVe-100, DBpedia-OpenAI-1M (`AnnBenchmarkDataset` class, requires `h5py`)
+- **ANN-Benchmarks (HDF5)**: Supported — GloVe-100, DBpedia-OpenAI-1M (`AnnBenchmarkDataset` class, h5py baked into Worker AMI v2)
 - **Cosine distance**: Supported — all 9 clients handle metric from `benchmark.yaml` dataset config
 
 ### Dataset Paths
