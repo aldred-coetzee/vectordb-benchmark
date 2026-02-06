@@ -535,8 +535,8 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | 14 | Batch search error kills entire benchmark | All batch DBs | Batch search exception propagates, losing sequential results already collected | Wrap batch search in try/except in `runner.py` |
 | 15 | EC2 launch failures silent and unrecoverable | Orchestrator | `launch_worker()` returned `None` on failure, caller skipped job, waited 180m | Retry with exponential backoff (3 attempts), re-launch in wait loop, instance health checks |
 | 16 | vCPU limit exceeded launching 45 workers | Tuning run | 45 × 16 vCPU = 720, exceeds account limit | 4 GIST jobs never launched. **TODO**: queue jobs with concurrency limit instead of launching all at once |
-| 17 | Docker stop timeout loses results | KDB.AI tuning | `container.stop(timeout=10)` times out → exit code 1 → benchmark.db not uploaded | 3 jobs had results locally but never uploaded. **TODO**: upload benchmark.db before stopping container |
-| 18 | Tuning report averages over different dataset counts | Report generator | `_avg()` averages whatever values exist — configs missing lowest-recall dataset get inflated scores | M32_efC128 reported as 0.955 (2 datasets) vs true 0.919 (3 datasets). **TODO**: fix `generate_tuning_report.py` |
+| 17 | Docker stop timeout loses results | KDB.AI tuning | `container.stop(timeout=10)` times out → exit code 1 → benchmark.db not uploaded | Worker now uploads results before cleanup; `set +e` around benchmark cmd; cleanup trap won't overwrite status.json |
+| 18 | Tuning report averages over different dataset counts | Report generator | `_avg()` averages whatever values exist — configs missing lowest-recall dataset get inflated scores | Impute recall from same-HNSW different-docker; complete-data configs rank above incomplete; "Data" column shows actual/imputed |
 
 ### Config Improvements
 
