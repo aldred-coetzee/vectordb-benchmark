@@ -29,10 +29,11 @@ SECURITY_GROUP_ID = "sg-0fe6723dd1004558d"
 IAM_INSTANCE_PROFILE = "vectordb-benchmark-role"
 KEY_NAME = "vectordb-benchmark"
 
-# Available databases and datasets
+# Default databases for AWS runs (pgvector excluded: HNSW build too slow for GIST/high-dim;
+# lancedb excluded: no supported index types). Both can still be run explicitly via --databases.
 DATABASES = [
     "qdrant", "milvus", "weaviate", "chroma",
-    "redis", "pgvector", "kdbai", "faiss", "lancedb"
+    "redis", "kdbai", "faiss",
 ]
 DATASETS = ["sift", "gist", "glove-100", "dbpedia-openai"]
 
