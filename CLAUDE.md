@@ -568,13 +568,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Orchestrator re-launch and health checks**: `wait_for_completion()` re-launches failed jobs within the first 30 minutes (max 2 attempts per job, in case capacity frees up). Every ~2.5 min, calls `describe_instances()` to detect crashed workers (terminated/stopped without uploading `status.json`). Results summary now distinguishes: completed, failed (benchmark error), instance crashed, launch failed (never started), timed out.
 - **AWS resource cleanup**: No orphan volumes/ENIs/EIPs from terminated instances (`InstanceInitiatedShutdownBehavior=terminate` + `DeleteOnTermination` on root volumes works correctly). Worker-v1 AMI (`ami-0f9bf04496aedd923`, 50GB, $2.50/mo) can be deregistered — superseded by worker-v2.
 
-**Run 2026-02-06-1750** (KDB.AI tuning: 15 configs × 3 datasets = 45 jobs):
-- 37/45 jobs completed. 4 never launched (vCPU limit), 3 docker stop timeout (data exists but not uploaded), 1 worker never reported.
-- Report: `results/kdbai-tuning-2026-02-06-1750.html`, DB: `results/vectordb-benchmark-kdbai-tuning-2026-02-06-1750.db`
-- **Conclusions invalid** — report averages over different dataset counts. M32_efC128 ranked #1 but only because GloVe-100 (lowest recall) was missing.
-- **Preliminary recommendation**: M=32, efC=128, 2wrk_8thr (best balance of recall 0.919, ingest ~4,600 v/s, QPS 172). Runner-up: M=32, efC=200 (+0.5% recall, -15% ingest).
-- M=48 data incomplete (all GIST jobs failed) — cannot recommend with confidence yet.
-- Needs re-run after fixing bugs #16-18 for clean data.
+**Run 2026-02-06-1750** (KDB.AI tuning) — See [KDBAI_TUNING.md](KDBAI_TUNING.md) for full results, analysis, and recommendations.
 
 **Run 2026-02-05-1816** (6 DBs × sift + gist, excludes pgvector + LanceDB):
 - 12/16 jobs completed with data. Qdrant empty (bugs #12-14, fixed). LanceDB skipped (expected).

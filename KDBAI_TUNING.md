@@ -148,10 +148,11 @@ M=48 shows highest recall (0.938) but all GIST data is missing — cannot recomm
 
 Tuning closes most of the recall gap. GloVe-100 still has a 5.6% deficit — may need M=48 or different approach for cosine metric.
 
-#### Bugs to Fix Before Re-Run
+#### Bugs Fixed / Outstanding
 
-| # | Bug | Fix Needed |
-|---|-----|-----------|
-| 16 | vCPU limit launching 45 workers | Add concurrency limit to orchestrator (max ~40 concurrent) |
-| 17 | Docker stop timeout loses results | Upload benchmark.db before `container.stop()` |
-| 18 | Report averages over different dataset counts | Fix `_avg()` in `generate_tuning_report.py` — impute recall from same-HNSW variants or only average complete configs |
+| # | Bug | Status | Resolution |
+|---|-----|--------|------------|
+| 15 | EC2 launch failures are silent | **Fixed** | `launch_worker()` retries 3× with exponential backoff. Re-launch in wait loop within 30 min. Instance health checks every ~2.5 min. |
+| 16 | vCPU limit launching 45 workers | **Handled by #15** | `VcpuLimitExceeded` is in retryable_codes. Workers re-launched as capacity frees up. Account limit is 765 vCPU (47 × 16vCPU workers). |
+| 17 | Docker stop timeout loses results | **Fixed** | `worker_startup.sh` uploads results before cleanup. Exit code captured with `set +e`. Status.json not overwritten by cleanup trap if already uploaded. |
+| 18 | Report averages over different dataset counts | **Fixed** | `generate_tuning_report.py` imputes recall from same-HNSW different-docker variants. Completeness-first ranking (configs with all datasets rank above those with gaps). Imputed values shown in italics. |
