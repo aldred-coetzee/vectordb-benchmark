@@ -98,8 +98,23 @@ git pull origin main
 ln -sf /data /app/vectordb-benchmark/data
 
 # =============================================================================
-# Pull fresh Docker images if requested
+# Pull fresh Docker images and upgrade client SDKs if requested
 # =============================================================================
+# Maps database name to Docker image and Python client package
+upgrade_client() {
+    local db=$1
+    echo "Upgrading Python client for $db..."
+    case $db in
+        kdbai)    sudo -u ec2-user pip3.12 install --upgrade kdbai-client ;;
+        qdrant)   sudo -u ec2-user pip3.12 install --upgrade qdrant-client ;;
+        milvus)   sudo -u ec2-user pip3.12 install --upgrade pymilvus ;;
+        weaviate) sudo -u ec2-user pip3.12 install --upgrade weaviate-client ;;
+        chroma)   sudo -u ec2-user pip3.12 install --upgrade chromadb ;;
+        redis)    sudo -u ec2-user pip3.12 install --upgrade redis ;;
+        pgvector) sudo -u ec2-user pip3.12 install --upgrade psycopg2-binary ;;
+    esac
+}
+
 if [ "$PULL_LATEST" = "all" ]; then
     echo "Pulling all Docker images..."
     docker pull qdrant/qdrant:latest
@@ -109,6 +124,8 @@ if [ "$PULL_LATEST" = "all" ]; then
     docker pull redis/redis-stack:latest
     docker pull pgvector/pgvector:pg16
     docker pull portal.dl.kx.com/kdbai-db:latest
+    # Upgrade the client SDK for the database this worker is running
+    upgrade_client "$DATABASE"
 elif [ -n "$PULL_LATEST" ]; then
     # Pull specific images (comma-separated)
     IFS=',' read -ra IMAGES <<< "$PULL_LATEST"
@@ -123,6 +140,13 @@ elif [ -n "$PULL_LATEST" ]; then
             redis)   docker pull redis/redis-stack:latest ;;
             pgvector) docker pull pgvector/pgvector:pg16 ;;
         esac
+    done
+    # Upgrade client SDK if this worker's database was in the pull list
+    for img in "${IMAGES[@]}"; do
+        if [ "$img" = "$DATABASE" ]; then
+            upgrade_client "$DATABASE"
+            break
+        fi
     done
 fi
 
