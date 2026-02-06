@@ -224,7 +224,7 @@ class ChromaClient(BaseVectorDBClient):
         if search_config.index_type == "hnsw":
             ef_search = search_config.params.get("efSearch", 64)
             try:
-                collection.modify(metadata={"hnsw:search_ef": ef_search})
+                collection.modify(configuration={"hnsw": {"ef_search": ef_search}})
             except Exception:
                 pass  # May fail if collection doesn't support modification
 
@@ -280,7 +280,7 @@ class ChromaClient(BaseVectorDBClient):
         if search_config.index_type == "hnsw":
             ef_search = search_config.params.get("efSearch", 64)
             try:
-                collection.modify(metadata={"hnsw:search_ef": ef_search})
+                collection.modify(configuration={"hnsw": {"ef_search": ef_search}})
             except Exception:
                 pass
 

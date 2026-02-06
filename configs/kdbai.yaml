@@ -36,7 +36,7 @@ metadata:
   persistence: disk
   license: Commercial
   url: https://kdb.ai
-  notes: "qIPC protocol. Uses qFlat/qHnsw (disk-backed mmap) not flat/hnsw (in-memory) — 2x faster search, 10x lower CPU (155% vs 1478%), 28% lower memory. THREADS env var must match CPU cores. Requires commercial license. Pass numpy arrays (not .tolist()) for 82x faster insert/search. Batch search via table.search(vectors={idx: [v1, v2, ...]}). THREADS parallelism only applies to partitioned tables — for single-table benchmarks, batch search does not parallelize server-side. For parallel throughput, use NUM_WRK > 1 with concurrent clients."
+  notes: "qIPC protocol. Uses in-memory flat/HNSW indexes for fair comparison with competitors (all use in-memory HNSW). THREADS env var must match CPU cores. Requires commercial license. Pass numpy arrays (not .tolist()) for 82x faster insert/search. Batch search via table.search(vectors={idx: [v1, v2, ...]}). THREADS parallelism only applies to partitioned tables — for single-table benchmarks, batch search does not parallelize server-side. For parallel throughput, use NUM_WRK > 1 with concurrent clients."
 
 # KDB.AI specific parameters
 params:

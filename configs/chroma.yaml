@@ -30,7 +30,7 @@ metadata:
   persistence: disk
   license: Apache-2.0
   url: https://www.trychroma.com
-  notes: "HNSW only (no true flat index). efSearch set via collection.modify() before each search config. Batch search via query(query_embeddings=[...])."
+  notes: "HNSW only (no true flat index). efSearch set via collection.modify(configuration={'hnsw': {'ef_search': N}}) — the legacy metadata API does NOT update the actual hnswlib index. Batch search via query(query_embeddings=[...])."
 
 # ChromaDB-specific parameters
 params:

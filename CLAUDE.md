@@ -1,5 +1,9 @@
 # Vector Database Benchmark Tool
 
+## Primary Objective
+
+**This benchmark is maintained by KX, the company behind KDB.AI.** The primary purpose is to understand where KDB.AI stands relative to competitors and identify areas for improvement. When analyzing results, always surface KDB.AI-specific insights: performance gaps, recall differences, configuration opportunities, and actionable recommendations. KDB.AI findings take priority in any investigation or report review.
+
 ## Claude Code Settings
 
 ```
@@ -526,7 +530,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **efSearch sweep**: Trimmed from [8,16,32,64,128,256] to [32,64,128,256] — lower values have unusable recall
 - **Dev datasets**: 10K vectors / 100 queries for ~12s smoke tests (`--dataset sift-dev`)
 - **KDB.AI THREADS**: Set to 16 (was 4) to match available CPU cores per [docs](https://code.kx.com/kdbai/latest/reference/multithreading.html)
-- **KDB.AI indexes**: Switched from `flat`/`hnsw` (in-memory, single-threaded) to `qFlat`/`qHnsw` (disk-backed, multithreaded) — 72% faster search. Note: API spelling is `qHnsw` not `qHNSW`.
+- **KDB.AI indexes**: Switched back to in-memory `flat`/`hnsw` from disk-backed `qFlat`/`qHnsw`. The disk-backed variants have documented lower recall, which was causing a 5% R@10 gap on SIFT and 14% on GIST vs competitors (all use in-memory HNSW). Worker instances have 64GB RAM — no memory constraint. In-memory also improved ingest speed 5x on sift-dev.
 - **Worker instances**: Upgraded from m5.2xlarge (8 CPU, 32GB) to m5.4xlarge (16 CPU, 64GB) — matches local benchmark config (cpus: 16, memory: 64g)
 - **Database notes**: All 9 configs have `metadata.notes` documenting benchmark-relevant quirks (payload limits, index types, protocol caveats)
 - **Batch search benchmark**: Added alongside sequential search. 5/9 databases support native batch search APIs (FAISS, Qdrant, Milvus, ChromaDB, KDB.AI). Sends all queries in one API call to measure throughput. P50/P95/P99 latency not available for batch (all queries processed together). Results stored with `HNSW_BATCH`/`FLAT_BATCH` index type suffix.
@@ -542,6 +546,8 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Docker launch commands in report**: The Benchmark Configuration section now includes a "Docker Launch Commands" subsection showing the exact `docker run` command for each client-server database. Built from config YAML `container` sections. Secrets/shell variables are redacted. Embedded databases (FAISS, LanceDB) are skipped.
 - **Test environment in report**: Benchmark Configuration starts with a "Test Environment" two-column table (Orchestrator vs Worker) showing role, instance type, vCPUs, memory, count, OS, region. Worker specs (vCPUs, memory, instance type) are dynamic from run data; orchestrator info from `benchmark.yaml` (not in results DB). Auto-detects AWS via `.compute.internal` hostnames; falls back to local hostname display. Repo link for reproducibility. Instance type stored in `runs.instance_type` column via EC2 IMDSv2 (1s timeout, `None` on non-EC2).
 - **Qdrant gRPC**: Switched from REST/JSON to gRPC (`prefer_grpc=True`). All operations (upsert, search, batch search) now use binary protobuf (~4 bytes/float instead of ~20 bytes JSON). Eliminates GIST payload size issues and makes benchmark fairer vs Milvus (also gRPC). Batch sizing updated to 50MB limit (gRPC max is 64MB).
+- **Chroma efSearch fix**: `collection.modify(metadata={"hnsw:search_ef": ef})` does NOT work in ChromaDB 1.x — only updates metadata dict, not the actual hnswlib index. Correct API: `collection.modify(configuration={"hnsw": {"ef_search": ef}})`. Previous runs had ef stuck at 64 (creation default), producing identical recall at ef=128 and ef=256.
+- **KDB.AI recall fix**: Switched from `qHnsw`/`qFlat` (disk-backed, documented "lower accuracy") to `hnsw`/`flat` (in-memory). All competitors use in-memory HNSW — the disk-backed variant was an unfair comparison. R@10 on sift-dev jumped from ~0.946 to 1.000. Also improved ingest 5x and batch QPS 7x.
 
 **Run 2026-02-05-1816** (6 DBs × sift + gist, excludes pgvector + LanceDB):
 - 12/16 jobs completed with data. Qdrant empty (bugs #12-14, fixed). LanceDB skipped (expected).
