@@ -46,6 +46,7 @@ class BenchmarkDatabase:
                 duration_seconds REAL,
                 database TEXT NOT NULL,
                 db_version TEXT,
+                db_client_version TEXT,
                 dataset TEXT NOT NULL,
                 vector_count INTEGER NOT NULL,
                 dimensions INTEGER NOT NULL,
@@ -54,35 +55,11 @@ class BenchmarkDatabase:
                 config_json TEXT,
                 benchmark_config_json TEXT,
                 hostname TEXT,
-                notes TEXT
+                notes TEXT,
+                run_label TEXT,
+                instance_type TEXT
             )
         """)
-
-        # Add new columns to existing tables (migration for existing databases)
-        try:
-            cursor.execute("ALTER TABLE runs ADD COLUMN start_time TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        try:
-            cursor.execute("ALTER TABLE runs ADD COLUMN end_time TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        try:
-            cursor.execute("ALTER TABLE runs ADD COLUMN duration_seconds REAL")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        try:
-            cursor.execute("ALTER TABLE runs ADD COLUMN run_label TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        try:
-            cursor.execute("ALTER TABLE runs ADD COLUMN instance_type TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        try:
-            cursor.execute("ALTER TABLE runs ADD COLUMN db_client_version TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
 
         # Create ingest_results table
         cursor.execute("""

@@ -81,13 +81,6 @@ def merge_databases(job_dbs: dict[str, str], output_path: str, run_label: str) -
 
     merged = sqlite3.connect(output_path)
 
-    # Add new columns (migration-safe)
-    for col in ("run_label TEXT", "instance_type TEXT"):
-        try:
-            merged.execute(f"ALTER TABLE runs ADD COLUMN {col}")
-        except sqlite3.OperationalError:
-            pass  # Already exists
-
     # Set run_label for rows from first DB
     merged.execute("UPDATE runs SET run_label = ?", (run_label,))
 
@@ -110,16 +103,17 @@ def merge_databases(job_dbs: dict[str, str], output_path: str, run_label: str) -
             # Insert run with new ID and run_label
             merged.execute("""
                 INSERT INTO runs (run_id, timestamp, start_time, end_time, duration_seconds,
-                    database, db_version, dataset, vector_count, dimensions,
+                    database, db_version, db_client_version, dataset, vector_count, dimensions,
                     cpus, memory_gb, config_json, benchmark_config_json, hostname, notes,
                     run_label, instance_type)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (new_run_id, run["timestamp"], run["start_time"], run["end_time"],
                   run["duration_seconds"], run["database"], run["db_version"],
+                  run["db_client_version"] if "db_client_version" in run.keys() else None,
                   run["dataset"], run["vector_count"], run["dimensions"],
                   run["cpus"], run["memory_gb"], run["config_json"],
                   run["benchmark_config_json"], run["hostname"], run["notes"],
-                  run_label, run["instance_type"] if "instance_type" in run.keys() else None))
+                  run_label, run["instance_type"]))
 
             # Copy child tables with remapped run_id
             for row in src.execute("SELECT * FROM ingest_results WHERE run_id=?", (old_run_id,)):
