@@ -1,7 +1,7 @@
 # Qdrant Configuration
 database:
   name: qdrant
-  version: "latest"
+  version:  # auto-detected at runtime
   endpoint: http://localhost:6333
 
 container:

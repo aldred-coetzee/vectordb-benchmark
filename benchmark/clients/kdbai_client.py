@@ -36,15 +36,17 @@ class KDBAIClient(BaseVectorDBClient):
         return "KDB.AI"
 
     def get_version(self) -> str:
-        """Return KDB.AI client library version."""
+        """Return KDB.AI server version."""
+        if self._session is not None:
+            try:
+                version_info = self._session.version()
+                return version_info.get("serverVersion", "unknown")
+            except Exception:
+                pass
         try:
             return kdbai.__version__
         except AttributeError:
-            try:
-                import importlib.metadata
-                return importlib.metadata.version("kdbai-client")
-            except Exception:
-                return "unknown"
+            return "unknown"
 
     def connect(self, endpoint: str = "http://localhost:8082", **kwargs) -> None:
         """
@@ -111,7 +113,7 @@ class KDBAIClient(BaseVectorDBClient):
             indexes = [
                 {
                     "name": index_config.name,
-                    "type": "flat",
+                    "type": "qFlat",
                     "column": "vectors",
                     "params": {
                         "dims": dimension,
@@ -123,13 +125,14 @@ class KDBAIClient(BaseVectorDBClient):
             indexes = [
                 {
                     "name": index_config.name,
-                    "type": "hnsw",
+                    "type": "qHnsw",
                     "column": "vectors",
                     "params": {
                         "dims": dimension,
                         "M": index_config.params.get("M", 16),
                         "efConstruction": index_config.params.get("efConstruction", 64),
                         "metric": kdbai_metric,
+                        "mmapLevel": 0,  # Fully in-memory (default 1 mmap-maps vectors to disk, hurting recall)
                     },
                 }
             ]

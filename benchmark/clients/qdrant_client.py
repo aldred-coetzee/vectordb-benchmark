@@ -77,13 +77,22 @@ class QdrantClient(BaseVectorDBClient):
             raise ConnectionError(f"Failed to connect to Qdrant: {e}")
 
     def get_version(self) -> str:
-        """Return Qdrant server version via REST API root endpoint."""
+        """Return Qdrant server version."""
         if self._client is None:
             return "unknown"
         try:
-            # qdrant-client exposes openapi_client with service API
             info = self._client.http.service_api.root_api()
             return info.version
+        except Exception:
+            pass
+        # Fallback: direct HTTP call to root endpoint
+        try:
+            import urllib.request
+            import json
+            host = self._client._client._host
+            port = self._client._client._port
+            with urllib.request.urlopen(f"http://{host}:{port}/", timeout=5) as resp:
+                return json.loads(resp.read()).get("version", "unknown")
         except Exception:
             return "unknown"
 
