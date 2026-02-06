@@ -401,18 +401,26 @@ class DockerManager:
 
         try:
             container = self._client.containers.get(container_name)
-            container.stop(timeout=10)
+            container.stop(timeout=30)
             print(f"  Container stopped")
-            container.remove(force=True)
-            print(f"  Container removed")
-            self._container = None
-            return True
         except docker.errors.NotFound:
             print(f"  Container '{container_name}' not found")
             return False
-        except docker.errors.APIError as e:
-            print(f"  Error stopping container: {e}")
-            return False
+        except Exception as e:
+            # ReadTimeout, APIError, etc. — don't let container cleanup crash the process
+            print(f"  Warning: container stop failed ({type(e).__name__}: {e}), forcing removal")
+
+        try:
+            container = self._client.containers.get(container_name)
+            container.remove(force=True)
+            print(f"  Container removed")
+        except docker.errors.NotFound:
+            pass  # Already gone
+        except Exception as e:
+            print(f"  Warning: container remove failed ({type(e).__name__}: {e})")
+
+        self._container = None
+        return True
 
     def is_running(self) -> bool:
         """Check if the container is running."""

@@ -227,6 +227,15 @@ echo "Benchmark completed with exit code: $BENCHMARK_EXIT_CODE"
 # =============================================================================
 echo "Uploading results to S3..."
 
+# Verify AWS credentials are available (IMDSv2 can be flaky under load)
+for i in 1 2 3 4 5; do
+    if aws sts get-caller-identity --region us-west-2 >/dev/null 2>&1; then
+        break
+    fi
+    echo "  AWS credentials not available, retrying in ${i}0s... (attempt $i/5)"
+    sleep $((i * 10))
+done
+
 # Upload result files regardless of exit code — benchmark.db may exist
 # even when exit code is non-zero (e.g., docker stop timeout after benchmark completes)
 if [ -d results/ ] && [ "$(ls -A results/)" ]; then
