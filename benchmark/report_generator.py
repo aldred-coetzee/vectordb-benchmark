@@ -1733,6 +1733,44 @@ class ComparisonReportGenerator:
     ) -> str:
         lines: List[str] = ["<h2>Benchmark Configuration</h2>"]
 
+        # Test environment
+        infra = bench_config.get("infrastructure", {})
+        repo_url = infra.get("repo", "")
+        aws_info = infra.get("aws", {})
+
+        # Auto-detect whether results came from AWS (hostname contains .compute.internal)
+        hostnames = set(r.hostname for r in runs if r.hostname)
+        is_aws = any(".compute.internal" in h for h in hostnames)
+
+        if is_aws and aws_info:
+            lines.append("<h3>Test Environment</h3>")
+            lines.append(f'''<div class="table-wrap"><table>
+            <tbody>
+            <tr><td><strong>Platform</strong></td><td>AWS EC2 ({aws_info.get("region", "N/A")})</td></tr>
+            <tr><td><strong>Instance Type</strong></td><td>{aws_info.get("instance_type", "N/A")}</td></tr>
+            <tr><td><strong>vCPUs</strong></td><td>{aws_info.get("vcpus", "N/A")}</td></tr>
+            <tr><td><strong>Memory</strong></td><td>{aws_info.get("memory_gb", "N/A")} GB</td></tr>
+            <tr><td><strong>OS</strong></td><td>{aws_info.get("os", "N/A")}</td></tr>
+            <tr><td><strong>Isolation</strong></td><td>One database per instance &mdash; no co-tenancy</td></tr>
+            </tbody></table></div>''')
+            if aws_info.get("note"):
+                lines.append(f'<p class="note">{aws_info["note"]}</p>')
+        elif hostnames:
+            # Local run — show hostname
+            sample_host = next(iter(hostnames))
+            sample_run = next(r for r in runs if r.hostname == sample_host)
+            lines.append("<h3>Test Environment</h3>")
+            env_rows = f'<tr><td><strong>Host</strong></td><td>{sample_host}</td></tr>'
+            if sample_run.cpus:
+                env_rows += f'<tr><td><strong>CPUs</strong></td><td>{int(sample_run.cpus)}</td></tr>'
+            if sample_run.memory_gb:
+                env_rows += f'<tr><td><strong>Memory</strong></td><td>{sample_run.memory_gb} GB</td></tr>'
+            lines.append(f'<div class="table-wrap"><table><tbody>{env_rows}</tbody></table></div>')
+
+        if repo_url:
+            lines.append(f'<p>Source code and reproduction instructions: '
+                         f'<a href="{repo_url}">{repo_url}</a></p>')
+
         # Datasets table
         result_datasets = set(r.dataset.upper() for r in runs)
         ds_entries = []
