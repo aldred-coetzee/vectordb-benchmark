@@ -576,31 +576,31 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 
 #### Method 1: Launch Template (Full Run)
 
-One Launch Template: `vectordb-benchmark-full` (version 10)
+One Launch Template: `vectordb-benchmark-full` (version 12)
 - Instance type: t3.small (orchestrator)
 - AMI: `ami-09ed5dd071675cfef` (Orchestrator AMI)
 - IAM profile: vectordb-benchmark-role
 - Instance tags: Name=`vectordb-orchestrator`, Owner=`acoetzee`, Project=`vectordb-benchmark`
 - User-data: `git pull` then runs local `aws/orchestrator_startup.sh`
 - Orchestrator self-tags with run ID after startup
-- Runs all 9 databases on sift + gist datasets
+- Defaults to all databases × all datasets (from `DATABASES`/`DATASETS` in `orchestrator.py`)
 - Fire and forget - just launch and check S3 later
 
-**Configuration via Instance Tags** (optional):
+**Configuration via Instance Tags** (pre-filled in template, editable at launch):
 | Tag | Default | Description |
 |-----|---------|-------------|
-| `Databases` | all (from `DATABASES` in orchestrator.py) | Comma-separated list (e.g., `qdrant,milvus,kdbai`) |
-| `Datasets` | all (from `DATASETS` in orchestrator.py) | Comma-separated list (e.g., `sift,gist`) |
-| `PullLatest` | none | Docker images to refresh (e.g., `kdbai,qdrant`) |
+| `Databases` | all (from `DATABASES` in orchestrator.py) | Comma-separated list — remove entries to run a subset |
+| `Datasets` | all (from `DATASETS` in orchestrator.py) | Comma-separated list — remove entries to run a subset |
+
+Tags are pre-filled with all values. To run a subset, just delete entries at launch time. `PullLatest` can be added manually when needed (see Future Enhancements).
 
 **Flow**:
 1. EC2 Console → Launch Templates → `vectordb-benchmark-full` → Launch
-2. Orchestrator instance launches workers via API
-3. Workers run benchmarks, upload to S3, auto-terminate
-4. Orchestrator monitors, then auto-terminates
-5. Results in `s3://vectordb-benchmark-590780615264/runs/{run-id}/`
-
-**Subset Runs**: Add `Databases` and `Datasets` tags to the instance to override defaults (e.g., `Databases=qdrant,milvus`).
+2. Edit `Databases` / `Datasets` tags if you want a subset (optional)
+3. Orchestrator instance launches workers via API
+4. Workers run benchmarks, upload to S3, auto-terminate
+5. Orchestrator monitors, then auto-terminates
+6. Results in `s3://vectordb-benchmark-590780615264/runs/{run-id}/`
 
 #### Method 2: CLI (Custom Runs)
 
@@ -643,7 +643,7 @@ python aws/orchestrator.py --no-wait
 9. ~~**Fix Benchmark Code Bugs**~~ ✓ — All 9 bugs fixed, all 9 DBs pass on sift-dev
 10. **Run Clean Full Benchmark** — All 9 DBs × sift + gist (run 2026-02-05-1047 in progress but uses old code/instance type)
 11. **Generate Comparison Report** — From S3 results
-12. **Later Enhancements** — SIFT-10M (.bvecs), `run_aws.py` CLI, Web UI
+12. **Later Enhancements** — SIFT-10M (.bvecs), `run_aws.py` CLI, Web UI, `PullLatest` Launch Template tag (pull fresh Docker images at worker startup — useful for benchmarking new DB releases)
 
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
