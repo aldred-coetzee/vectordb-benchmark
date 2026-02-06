@@ -42,6 +42,12 @@ DATASETS = ["sift", "gist", "glove-100", "dbpedia-openai"]
 # Databases that don't need Docker (embedded)
 EMBEDDED_DBS = ["faiss", "lancedb"]
 
+# Database+dataset combinations to skip (known failures from prior runs)
+EXCLUDED_JOBS = {
+    ("milvus", "dbpedia-openai"),  # No space left on device (container disk full with 1536D vectors)
+    ("milvus", "gist"),            # Container OOM during search (30.6GB peak at M=16/efC=64)
+}
+
 
 def load_tuning_config(benchmark_type: str) -> dict | None:
     """Load a tuning config derived from the benchmark type.
@@ -633,7 +639,14 @@ def main():
               f"{len(tuning_cfg.get('docker_params', {}).get('configs', []))} docker_configs)")
     else:
         tuning_jobs = None
-        job_names = [f"{db}-{ds}" for db in databases for ds in datasets]
+        all_combos = [(db, ds) for db in databases for ds in datasets]
+        skipped = [(db, ds) for db, ds in all_combos if (db, ds) in EXCLUDED_JOBS]
+        active_combos = [(db, ds) for db, ds in all_combos if (db, ds) not in EXCLUDED_JOBS]
+        job_names = [f"{db}-{ds}" for db, ds in active_combos]
+        if skipped:
+            print(f"\nSkipping {len(skipped)} excluded jobs:")
+            for db, ds in skipped:
+                print(f"  {db}-{ds}")
         print(f"\nTotal jobs: {len(job_names)}")
 
     # Create run config in S3

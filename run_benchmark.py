@@ -431,7 +431,9 @@ def run_with_config(
 
             # Prepare index configs
             hnsw_config = indexes_config.get("hnsw", {})
-            ef_search_values = hnsw_config.get("efSearch", [8, 16, 32, 64, 128, 256])
+            ef_search_values = hnsw_config.get("efSearch", [128, 256, 512])
+            hnsw_m = hnsw_config.get("M", 48)
+            hnsw_ef_construction = hnsw_config.get("efConstruction", 200)
 
             # Run benchmark
             try:
@@ -464,6 +466,8 @@ def run_with_config(
                         hnsw_ef_search_values=ef_search_values,
                         indexes_to_run=indexes_to_run,
                         metric=dataset_metric,
+                        hnsw_m=hnsw_m,
+                        hnsw_ef_construction=hnsw_ef_construction,
                     )
 
                 # Override Docker limits with config values if provided

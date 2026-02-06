@@ -140,7 +140,7 @@ class KDBAIClient(BaseVectorDBClient):
                         "M": index_config.params.get("M", 16),
                         "efConstruction": index_config.params.get("efConstruction", 64),
                         "metric": kdbai_metric,
-                        "mmapLevel": 0,  # Fully in-memory (default 1 mmap-maps vectors to disk, hurting recall)
+                        "mmapLevel": 1,  # Memory-mapped (mmapLevel=0 OOMs on high-dim datasets like DBpedia-OpenAI)
                     },
                 }
             ]

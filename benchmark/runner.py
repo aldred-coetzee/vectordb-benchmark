@@ -389,6 +389,8 @@ class BenchmarkRunner:
         hnsw_ef_search_values: List[int] = None,
         indexes_to_run: List[str] = None,
         metric: str = "L2",
+        hnsw_m: int = 48,
+        hnsw_ef_construction: int = 200,
     ) -> BenchmarkResults:
         """
         Run the complete benchmark suite.
@@ -445,8 +447,8 @@ class BenchmarkRunner:
             index_type="hnsw",
             params={
                 "dims": self.dataset.dimensions,
-                "M": 16,
-                "efConstruction": 64,
+                "M": hnsw_m,
+                "efConstruction": hnsw_ef_construction,
                 "metric": metric,
             },
         )

@@ -1834,6 +1834,38 @@ class ComparisonReportGenerator:
             <thead><tr><th>Dataset</th><th>Vectors</th><th>Dims</th><th>Metric</th><th>Purpose</th></tr></thead>
             <tbody>{rows}</tbody></table></div>''')
 
+        # Exclusions and caveats
+        exclusions = bench_config.get("exclusions", [])
+        caveats = bench_config.get("caveats", [])
+        if exclusions or caveats:
+            lines.append("<h3>Known Limitations</h3>")
+            if exclusions:
+                ex_rows = ""
+                for ex in exclusions:
+                    db = ex.get("database", "").upper()
+                    ds = ex.get("dataset", "").upper()
+                    reason = ex.get("reason", "")
+                    ex_rows += f"<tr><td>{db}</td><td>{ds}</td><td>Excluded</td><td>{reason}</td></tr>"
+                lines.append(f'''<div class="table-wrap"><table>
+                <thead><tr><th>Database</th><th>Dataset</th><th>Status</th><th>Reason</th></tr></thead>
+                <tbody>{ex_rows}</tbody></table></div>''')
+            if caveats:
+                cav_rows = ""
+                for cav in caveats:
+                    db = cav.get("database", "").upper()
+                    ds = cav.get("dataset", "all").upper()
+                    note = cav.get("note", "")
+                    cav_rows += f"<tr><td>{db}</td><td>{ds}</td><td>Caveat</td><td>{note}</td></tr>"
+                if not exclusions:
+                    lines.append(f'''<div class="table-wrap"><table>
+                    <thead><tr><th>Database</th><th>Dataset</th><th>Status</th><th>Note</th></tr></thead>
+                    <tbody>{cav_rows}</tbody></table></div>''')
+                else:
+                    # Append caveat rows to the existing table (reopen)
+                    lines.append(f'''<div class="table-wrap"><table>
+                    <thead><tr><th>Database</th><th>Dataset</th><th>Status</th><th>Note</th></tr></thead>
+                    <tbody>{cav_rows}</tbody></table></div>''')
+
         # Index types
         indexes = bench_config.get("indexes", {})
         if indexes:
@@ -1913,12 +1945,21 @@ class ComparisonReportGenerator:
     # Methodology
     # -----------------------------------------------------------------
     def _render_methodology(self) -> str:
-        return """
+        bench_config = self._load_benchmark_config()
+        hnsw_cfg = bench_config.get("indexes", {}).get("hnsw", {})
+        m_val = hnsw_cfg.get("M", 48)
+        efc_val = hnsw_cfg.get("efConstruction", 200)
+        ef_vals = hnsw_cfg.get("efSearch", [128, 256, 512])
+        ef_str = ", ".join(str(v) for v in ef_vals)
+
+        return f"""
         <h2>Methodology</h2>
         <ul>
             <li>Each database was tested with the same dataset and query workload</li>
-            <li>HNSW indexes used M=16, efConstruction=64 (consistent across all databases)</li>
-            <li>Search tests used 10,000 queries with 100 warmup queries, executed sequentially (single-client, one-at-a-time)</li>
+            <li>HNSW indexes used M={m_val}, efConstruction={efc_val} (consistent across all databases), with efSearch swept at [{ef_str}]</li>
+            <li>Search tests used dataset query vectors with scaled warmup (max of 100, 10%% of queries), executed sequentially (single-client, one-at-a-time)</li>
+            <li>Datasets with fewer than 5,000 queries were padded to 5,000 for QPS stability (recall computed on original queries only)</li>
+            <li>A cache-warming pass (1,000 queries) runs before the first timed efSearch to eliminate cold-cache bias</li>
             <li>Recall is calculated against brute-force ground truth provided with each dataset</li>
             <li>Client-server databases run in Docker containers with consistent CPU/memory limits</li>
             <li>FAISS runs in-process (no network overhead) &mdash; shown as embedded baseline, not directly comparable to client-server databases</li>
