@@ -265,15 +265,21 @@ class KDBAIClient(BaseVectorDBClient):
         else:
             index_params = {}
 
+        # Build search options (e.g., indexOnly)
+        search_options = {}
+        if search_config.params.get("indexOnly"):
+            search_options["indexOnly"] = True
+
         try:
             start_time = time.perf_counter()
 
+            search_kwargs: Dict[str, Any] = {"vectors": search_vectors, "n": k}
             if index_params:
-                results = table.search(
-                    vectors=search_vectors, n=k, index_params=index_params
-                )
-            else:
-                results = table.search(vectors=search_vectors, n=k)
+                search_kwargs["index_params"] = index_params
+            if search_options:
+                search_kwargs["options"] = search_options
+
+            results = table.search(**search_kwargs)
 
             end_time = time.perf_counter()
             latency_ms = (end_time - start_time) * 1000
@@ -332,15 +338,21 @@ class KDBAIClient(BaseVectorDBClient):
         else:
             index_params = {}
 
+        # Build search options (e.g., indexOnly)
+        search_options = {}
+        if search_config.params.get("indexOnly"):
+            search_options["indexOnly"] = True
+
         try:
             start_time = time.perf_counter()
 
+            search_kwargs: Dict[str, Any] = {"vectors": search_vectors, "n": k}
             if index_params:
-                results = table.search(
-                    vectors=search_vectors, n=k, index_params=index_params
-                )
-            else:
-                results = table.search(vectors=search_vectors, n=k)
+                search_kwargs["index_params"] = index_params
+            if search_options:
+                search_kwargs["options"] = search_options
+
+            results = table.search(**search_kwargs)
 
             end_time = time.perf_counter()
             total_ms = (end_time - start_time) * 1000

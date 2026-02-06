@@ -159,6 +159,47 @@ def filter_indexes(
     return filtered
 
 
+def _filter_tuning_config(
+    tuning_config: Dict[str, Any],
+    hnsw_m: Optional[int] = None,
+    hnsw_efc: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Filter tuning config to a specific hnsw_config when per-job overrides are set.
+
+    This is used in AWS mode where each worker runs a single (M, efC) combo.
+
+    Args:
+        tuning_config: Full tuning config dict
+        hnsw_m: If set, keep only hnsw_configs with this M value
+        hnsw_efc: If set, keep only hnsw_configs with this efConstruction value
+
+    Returns:
+        Filtered tuning config (original if no overrides)
+    """
+    if hnsw_m is None and hnsw_efc is None:
+        return tuning_config
+
+    import copy
+    filtered = copy.deepcopy(tuning_config)
+    hnsw_configs = filtered.get("method_params", {}).get("hnsw_configs", [])
+
+    filtered_configs = []
+    for cfg in hnsw_configs:
+        if hnsw_m is not None and cfg.get("M") != hnsw_m:
+            continue
+        if hnsw_efc is not None and cfg.get("efConstruction") != hnsw_efc:
+            continue
+        filtered_configs.append(cfg)
+
+    if not filtered_configs:
+        print(f"Warning: No hnsw_configs match M={hnsw_m}, efC={hnsw_efc}")
+        print(f"  Available: {[(c['name'], c['M'], c['efConstruction']) for c in hnsw_configs]}")
+
+    filtered["method_params"]["hnsw_configs"] = filtered_configs
+    return filtered
+
+
 def run_with_config(
     config: Dict[str, Any],
     benchmark_config: Dict[str, Any],
@@ -168,6 +209,10 @@ def run_with_config(
     container_name: Optional[str],
     skip_docker: bool = False,
     keep_container: bool = False,
+    tuning_config: Optional[Dict[str, Any]] = None,
+    hnsw_m_override: Optional[int] = None,
+    hnsw_efc_override: Optional[int] = None,
+    docker_config_name: Optional[str] = None,
 ) -> None:
     """
     Run benchmark using YAML configuration.
@@ -181,6 +226,10 @@ def run_with_config(
         container_name: Optional Docker container name for monitoring
         skip_docker: If True, skip Docker container management (use existing)
         keep_container: If True, don't stop container after benchmark
+        tuning_config: Optional tuning configuration dict (enables tuning mode)
+        hnsw_m_override: If set, filter tuning configs to this M value only
+        hnsw_efc_override: If set, filter tuning configs to this efConstruction only
+        docker_config_name: Name of docker config for index_type naming
     """
     import time
     from datetime import datetime
@@ -300,19 +349,23 @@ def run_with_config(
         if db_client_version and db_client_version != "unknown":
             print(f"  Client library: {db_client_version}")
 
-        # Filter indexes by what the client supports
-        supported = get_supported_indexes(client)
-        indexes_to_run = filter_indexes(requested_indexes, supported, database_name)
+        # Filter indexes by what the client supports (skip in tuning mode — always HNSW)
+        if tuning_config:
+            indexes_to_run = ["hnsw"]
+            print("Tuning mode: sweeping HNSW configurations")
+        else:
+            supported = get_supported_indexes(client)
+            indexes_to_run = filter_indexes(requested_indexes, supported, database_name)
 
-        if not indexes_to_run:
-            print(f"\n{database_name} does not support the requested index types. Nothing to benchmark.")
-            if not supported:
-                print(f"  This database uses different index types (e.g., IVF-based) — it will be included in future benchmarks.")
-            else:
-                print(f"  Supported indexes: {supported}")
-            return
+            if not indexes_to_run:
+                print(f"\n{database_name} does not support the requested index types. Nothing to benchmark.")
+                if not supported:
+                    print(f"  This database uses different index types (e.g., IVF-based) — it will be included in future benchmarks.")
+                else:
+                    print(f"  Supported indexes: {supported}")
+                return
 
-        print(f"Indexes to run: {indexes_to_run}")
+            print(f"Indexes to run: {indexes_to_run}")
 
         # Initialize SQLite database
         db = BenchmarkDatabase()
@@ -386,12 +439,24 @@ def run_with_config(
                     warmup_queries=warmup_queries,
                 )
 
-                # Run the benchmark with filtered indexes
-                results = runner.run_full_benchmark(
-                    hnsw_ef_search_values=ef_search_values,
-                    indexes_to_run=indexes_to_run,
-                    metric=dataset_metric,
-                )
+                if tuning_config:
+                    # Tuning mode: sweep HNSW configs from tuning YAML
+                    # Filter hnsw_configs if per-job overrides are set
+                    effective_tuning = _filter_tuning_config(
+                        tuning_config, hnsw_m_override, hnsw_efc_override
+                    )
+                    results = runner.run_tuning_benchmark(
+                        tuning_config=effective_tuning,
+                        metric=dataset_metric,
+                        docker_config_name=docker_config_name,
+                    )
+                else:
+                    # Competitive mode: standard benchmark
+                    results = runner.run_full_benchmark(
+                        hnsw_ef_search_values=ef_search_values,
+                        indexes_to_run=indexes_to_run,
+                        metric=dataset_metric,
+                    )
 
                 # Override Docker limits with config values if provided
                 if cpus > 0:
@@ -708,6 +773,28 @@ Examples:
         help="Output directory for results (default: results)",
     )
 
+    # Tuning arguments
+    tuning_group = parser.add_argument_group("Tuning benchmark")
+    tuning_group.add_argument(
+        "--tuning-config",
+        help="Path to tuning YAML config (e.g., configs/tuning/kdbai-hnsw.yaml). "
+             "When set, runs tuning benchmark instead of competitive benchmark.",
+    )
+    tuning_group.add_argument(
+        "--hnsw-m",
+        type=int,
+        help="Override: run only this M value from tuning config",
+    )
+    tuning_group.add_argument(
+        "--hnsw-efc",
+        type=int,
+        help="Override: run only this efConstruction value from tuning config",
+    )
+    tuning_group.add_argument(
+        "--docker-config-name",
+        help="Name of docker_params config being used (for index_type naming)",
+    )
+
     # Docker management arguments
     docker_group = parser.add_argument_group("Docker management")
     docker_group.add_argument(
@@ -745,11 +832,29 @@ Examples:
         if args.indexes:
             indexes_filter = [idx.strip() for idx in args.indexes.split(",")]
 
+        # Load tuning config if specified
+        tuning_config_data = None
+        if args.tuning_config:
+            tuning_path = Path(args.tuning_config)
+            if not tuning_path.exists():
+                print(f"Error: Tuning config not found: {tuning_path}")
+                sys.exit(1)
+            tuning_config_data = load_yaml_config(str(tuning_path))
+
+        mode_str = "Tuning Mode" if tuning_config_data else "Config Mode"
         print("=" * 80)
-        print("VECTOR DATABASE BENCHMARK (Config Mode)")
+        print(f"VECTOR DATABASE BENCHMARK ({mode_str})")
         print("=" * 80)
         print(f"Database config: {args.config}")
         print(f"Benchmark config: {benchmark_path}")
+        if tuning_config_data:
+            print(f"Tuning config:   {args.tuning_config}")
+            if args.hnsw_m is not None:
+                print(f"  HNSW M filter: {args.hnsw_m}")
+            if args.hnsw_efc is not None:
+                print(f"  HNSW efC filter: {args.hnsw_efc}")
+            if args.docker_config_name:
+                print(f"  Docker config: {args.docker_config_name}")
         print(f"Dataset filter:  {args.dataset or 'all'}")
         print(f"Index filter:    {args.indexes or 'all'}")
         print(f"Output:          {args.output}")
@@ -766,6 +871,10 @@ Examples:
             container_name=args.container,
             skip_docker=args.skip_docker,
             keep_container=args.keep_container,
+            tuning_config=tuning_config_data,
+            hnsw_m_override=args.hnsw_m,
+            hnsw_efc_override=args.hnsw_efc,
+            docker_config_name=args.docker_config_name,
         )
 
     elif args.database:

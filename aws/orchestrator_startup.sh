@@ -41,12 +41,14 @@ DATABASES=$(get_tag "Databases")
 DATASETS=$(get_tag "Datasets")
 PULL_LATEST=$(get_tag "PullLatest")
 BENCHMARK_TYPE=$(get_tag "BenchmarkType")
+TUNING_CONFIG=$(get_tag "TuningConfig")
 
 # Normalize "None" (AWS CLI returns literal "None" for missing tags)
 [ "$DATABASES" = "None" ] && DATABASES=""
 [ "$DATASETS" = "None" ] && DATASETS=""
 [ "$PULL_LATEST" = "None" ] && PULL_LATEST=""
 [ "$BENCHMARK_TYPE" = "None" ] && BENCHMARK_TYPE=""
+[ "$TUNING_CONFIG" = "None" ] && TUNING_CONFIG=""
 # Default benchmark type to competitive
 [ -z "$BENCHMARK_TYPE" ] && BENCHMARK_TYPE="competitive"
 
@@ -62,6 +64,7 @@ echo "Benchmark type: $BENCHMARK_TYPE"
 echo "Databases: $DATABASES"
 echo "Datasets: $DATASETS"
 echo "Pull latest: ${PULL_LATEST:-none}"
+echo "Tuning config: ${TUNING_CONFIG:-none}"
 echo "========================================"
 
 # =============================================================================
@@ -125,6 +128,9 @@ if [ -n "$DATASETS" ]; then
 fi
 if [ -n "$PULL_LATEST" ]; then
     ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --pull-latest $PULL_LATEST"
+fi
+if [ -n "$TUNING_CONFIG" ]; then
+    ORCHESTRATOR_ARGS="$ORCHESTRATOR_ARGS --tuning-config $TUNING_CONFIG"
 fi
 
 echo "Running: sudo -u ec2-user python3.12 $ORCHESTRATOR_ARGS"

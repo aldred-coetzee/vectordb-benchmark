@@ -41,6 +41,56 @@ DATASETS = ["sift", "gist", "glove-100", "dbpedia-openai"]
 EMBEDDED_DBS = ["faiss", "lancedb"]
 
 
+def load_tuning_config(tuning_config_path: str) -> dict:
+    """Load a tuning YAML config file."""
+    import yaml
+
+    config_path = Path(tuning_config_path)
+    # Search in configs/tuning/ if not a full path
+    if not config_path.exists():
+        config_path = Path(__file__).parent.parent / "configs" / "tuning" / tuning_config_path
+    if not config_path.exists():
+        raise FileNotFoundError(f"Tuning config not found: {tuning_config_path}")
+
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+
+def generate_tuning_jobs(
+    tuning_config: dict,
+    datasets: list[str],
+) -> list[dict]:
+    """Generate cross-product of (dataset x hnsw_config x docker_config) jobs.
+
+    Returns list of job dicts with keys:
+        database, dataset, hnsw_name, hnsw_m, hnsw_efc, docker_name,
+        docker_threads, docker_num_wrk
+    """
+    method_params = tuning_config.get("method_params", {})
+    docker_params = tuning_config.get("docker_params", {})
+
+    hnsw_configs = method_params.get("hnsw_configs", [])
+    docker_configs = docker_params.get("configs", [{"name": "default", "env": {}}])
+
+    jobs = []
+    for dataset in datasets:
+        for hnsw_cfg in hnsw_configs:
+            for docker_cfg in docker_configs:
+                env = docker_cfg.get("env", {})
+                jobs.append({
+                    "database": "kdbai",
+                    "dataset": dataset,
+                    "hnsw_name": hnsw_cfg["name"],
+                    "hnsw_m": hnsw_cfg["M"],
+                    "hnsw_efc": hnsw_cfg["efConstruction"],
+                    "docker_name": docker_cfg["name"],
+                    "docker_threads": env.get("THREADS", "16"),
+                    "docker_num_wrk": env.get("NUM_WRK", "1"),
+                })
+
+    return jobs
+
+
 def load_worker_script() -> str:
     """Load the worker startup script template."""
     script_path = Path(__file__).parent / "worker_startup.sh"
@@ -53,6 +103,13 @@ def create_user_data(
     run_id: str,
     benchmark_type: str = "competitive",
     pull_latest: str = "",
+    tuning_config_file: str = "",
+    hnsw_m: str = "",
+    hnsw_efc: str = "",
+    hnsw_name: str = "",
+    docker_config_name: str = "",
+    docker_threads: str = "",
+    docker_num_wrk: str = "",
 ) -> str:
     """Create user-data script for a worker instance."""
     template = load_worker_script()
@@ -64,6 +121,15 @@ def create_user_data(
     script = script.replace("{{RUN_ID}}", run_id)
     script = script.replace("{{BENCHMARK_TYPE}}", benchmark_type)
     script = script.replace("{{PULL_LATEST}}", pull_latest)
+
+    # Tuning-specific placeholders
+    script = script.replace("{{TUNING_CONFIG}}", tuning_config_file)
+    script = script.replace("{{HNSW_M}}", hnsw_m)
+    script = script.replace("{{HNSW_EFC}}", hnsw_efc)
+    script = script.replace("{{HNSW_NAME}}", hnsw_name)
+    script = script.replace("{{DOCKER_CONFIG_NAME}}", docker_config_name)
+    script = script.replace("{{DOCKER_THREADS}}", docker_threads)
+    script = script.replace("{{DOCKER_NUM_WRK}}", docker_num_wrk)
 
     # Base64 encode for EC2 user-data
     return base64.b64encode(script.encode()).decode()
@@ -77,12 +143,29 @@ def launch_worker(
     benchmark_type: str = "competitive",
     pull_latest: str = "",
     dry_run: bool = False,
+    tuning_config_file: str = "",
+    hnsw_m: str = "",
+    hnsw_efc: str = "",
+    hnsw_name: str = "",
+    docker_config_name: str = "",
+    docker_threads: str = "",
+    docker_num_wrk: str = "",
 ) -> Optional[str]:
     """Launch a worker EC2 instance."""
 
-    user_data = create_user_data(database, dataset, run_id, benchmark_type, pull_latest)
+    user_data = create_user_data(
+        database, dataset, run_id, benchmark_type, pull_latest,
+        tuning_config_file=tuning_config_file,
+        hnsw_m=hnsw_m, hnsw_efc=hnsw_efc, hnsw_name=hnsw_name,
+        docker_config_name=docker_config_name,
+        docker_threads=docker_threads, docker_num_wrk=docker_num_wrk,
+    )
 
-    instance_name = f"vectordb-worker-{database}-{dataset}-{run_id}"
+    # Include tuning params in instance name for identifiability
+    if hnsw_name and docker_config_name:
+        instance_name = f"vectordb-worker-{database}-{dataset}-{hnsw_name}-{docker_config_name}-{run_id}"
+    else:
+        instance_name = f"vectordb-worker-{database}-{dataset}-{run_id}"
 
     launch_params = {
         "ImageId": WORKER_AMI,
@@ -127,10 +210,17 @@ def launch_worker(
 
 
 def check_job_status(
-    s3_client, run_id: str, database: str, dataset: str, benchmark_type: str = "competitive",
+    s3_client, run_id: str, job_name: str, benchmark_type: str = "competitive",
 ) -> str:
-    """Check the status of a job from S3."""
-    key = f"runs/{benchmark_type}/{run_id}/jobs/{database}-{dataset}/status.json"
+    """Check the status of a job from S3.
+
+    Args:
+        s3_client: boto3 S3 client
+        run_id: Run identifier
+        job_name: Job directory name (e.g., 'kdbai-sift' or 'kdbai-sift-M32_efC128-1wrk_16thr')
+        benchmark_type: Benchmark type for S3 path
+    """
+    key = f"runs/{benchmark_type}/{run_id}/jobs/{job_name}/status.json"
     try:
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
         status = json.loads(response["Body"].read().decode())
@@ -144,28 +234,36 @@ def check_job_status(
 def wait_for_completion(
     s3_client,
     run_id: str,
-    jobs: list[tuple[str, str]],
+    job_names: list[str],
     benchmark_type: str = "competitive",
     timeout_minutes: int = 180,
 ) -> dict:
-    """Wait for all jobs to complete and return status summary."""
+    """Wait for all jobs to complete and return status summary.
 
-    print(f"\nWaiting for {len(jobs)} jobs to complete (timeout: {timeout_minutes}m)...")
+    Args:
+        s3_client: boto3 S3 client
+        run_id: Run identifier
+        job_names: List of job directory names (e.g., 'kdbai-sift' or 'kdbai-sift-M32_efC128-1wrk_16thr')
+        benchmark_type: Benchmark type for S3 path
+        timeout_minutes: Maximum wait time
+    """
+
+    print(f"\nWaiting for {len(job_names)} jobs to complete (timeout: {timeout_minutes}m)...")
 
     start_time = time.time()
     timeout_seconds = timeout_minutes * 60
 
-    results = {job: "pending" for job in jobs}
+    results = {job: "pending" for job in job_names}
 
     while time.time() - start_time < timeout_seconds:
         all_done = True
 
-        for database, dataset in jobs:
-            if results[(database, dataset)] in ("completed", "failed", "skipped"):
+        for job_name in job_names:
+            if results[job_name] in ("completed", "failed", "skipped"):
                 continue
 
-            status = check_job_status(s3_client, run_id, database, dataset, benchmark_type)
-            results[(database, dataset)] = status
+            status = check_job_status(s3_client, run_id, job_name, benchmark_type)
+            results[job_name] = status
 
             if status == "pending":
                 all_done = False
@@ -297,6 +395,11 @@ def main():
         default=180,
         help="Timeout in minutes for waiting (default: 180)",
     )
+    parser.add_argument(
+        "--tuning-config",
+        help="Tuning config file (e.g., kdbai-hnsw.yaml or full path). "
+             "Generates cross-product jobs (dataset x hnsw_config x docker_config).",
+    )
 
     args = parser.parse_args()
 
@@ -305,31 +408,33 @@ def main():
     datasets = [d.strip() for d in args.datasets.split(",")]
     run_id = args.run_id or generate_run_id()
     benchmark_type = args.benchmark_type
+    is_tuning = bool(args.tuning_config)
 
-    # Validate
-    for db in databases:
-        if db not in DATABASES:
-            print(f"Unknown database: {db}")
-            return 1
+    # Validate datasets
     for ds in datasets:
         if ds not in DATASETS:
             print(f"Unknown dataset: {ds}")
             return 1
+
+    # Validate databases (skip for tuning — always kdbai)
+    if not is_tuning:
+        for db in databases:
+            if db not in DATABASES:
+                print(f"Unknown database: {db}")
+                return 1
 
     print("=" * 60)
     print("VECTORDB BENCHMARK ORCHESTRATOR")
     print("=" * 60)
     print(f"Run ID:     {run_id}")
     print(f"Type:       {benchmark_type}")
+    if is_tuning:
+        print(f"Mode:       TUNING ({args.tuning_config})")
     print(f"Databases:  {', '.join(databases)}")
     print(f"Datasets:   {', '.join(datasets)}")
     print(f"Pull latest: {args.pull_latest or 'none'}")
     print(f"Dry run:    {args.dry_run}")
     print("=" * 60)
-
-    # Create job list
-    jobs = [(db, ds) for db in databases for ds in datasets]
-    print(f"\nTotal jobs: {len(jobs)}")
 
     # Initialize AWS clients
     # On EC2: uses IAM role (no profile needed)
@@ -343,6 +448,24 @@ def main():
     ec2_client = session.client("ec2")
     s3_client = session.client("s3")
 
+    # Build job list — competitive or tuning mode
+    if is_tuning:
+        tuning_cfg = load_tuning_config(args.tuning_config)
+        tuning_jobs = generate_tuning_jobs(tuning_cfg, datasets)
+        # Job names for S3 tracking: kdbai-sift-M32_efC128-1wrk_16thr
+        job_names = [
+            f"{j['database']}-{j['dataset']}-{j['hnsw_name']}-{j['docker_name']}"
+            for j in tuning_jobs
+        ]
+        print(f"\nTuning jobs: {len(tuning_jobs)} "
+              f"({len(datasets)} datasets x "
+              f"{len(tuning_cfg.get('method_params', {}).get('hnsw_configs', []))} hnsw_configs x "
+              f"{len(tuning_cfg.get('docker_params', {}).get('configs', []))} docker_configs)")
+    else:
+        tuning_jobs = None
+        job_names = [f"{db}-{ds}" for db in databases for ds in datasets]
+        print(f"\nTotal jobs: {len(job_names)}")
+
     # Create run config in S3
     run_prefix = f"runs/{benchmark_type}/{run_id}"
     if not args.dry_run:
@@ -352,8 +475,11 @@ def main():
             "databases": databases,
             "datasets": datasets,
             "pull_latest": args.pull_latest,
+            "tuning_config": args.tuning_config or None,
             "started_at": datetime.now().isoformat(),
-            "jobs": [{"database": db, "dataset": ds} for db, ds in jobs],
+            "jobs": (
+                [{"job_name": name} for name in job_names]
+            ),
         }
         s3_client.put_object(
             Bucket=S3_BUCKET,
@@ -367,21 +493,45 @@ def main():
     print("\nLaunching workers...")
     instance_ids = []
 
-    for database, dataset in jobs:
-        instance_id = launch_worker(
-            ec2_client,
-            database,
-            dataset,
-            run_id,
-            benchmark_type=benchmark_type,
-            pull_latest=args.pull_latest,
-            dry_run=args.dry_run,
-        )
-        if instance_id:
-            instance_ids.append(instance_id)
+    if is_tuning:
+        for job in tuning_jobs:
+            instance_id = launch_worker(
+                ec2_client,
+                job["database"],
+                job["dataset"],
+                run_id,
+                benchmark_type=benchmark_type,
+                pull_latest=args.pull_latest,
+                dry_run=args.dry_run,
+                tuning_config_file=args.tuning_config,
+                hnsw_m=str(job["hnsw_m"]),
+                hnsw_efc=str(job["hnsw_efc"]),
+                hnsw_name=job["hnsw_name"],
+                docker_config_name=job["docker_name"],
+                docker_threads=job["docker_threads"],
+                docker_num_wrk=job["docker_num_wrk"],
+            )
+            if instance_id:
+                instance_ids.append(instance_id)
+    else:
+        for db in databases:
+            for ds in datasets:
+                instance_id = launch_worker(
+                    ec2_client,
+                    db,
+                    ds,
+                    run_id,
+                    benchmark_type=benchmark_type,
+                    pull_latest=args.pull_latest,
+                    dry_run=args.dry_run,
+                )
+                if instance_id:
+                    instance_ids.append(instance_id)
 
     if args.dry_run:
         print("\n[DRY RUN] No instances launched.")
+        for name in job_names:
+            print(f"  Would launch: {name}")
         return 0
 
     print(f"\nLaunched {len(instance_ids)} workers")
@@ -392,17 +542,17 @@ def main():
         return 0
 
     # Wait for completion
-    results = wait_for_completion(s3_client, run_id, jobs, benchmark_type, args.timeout)
+    results = wait_for_completion(s3_client, run_id, job_names, benchmark_type, args.timeout)
 
     # Summary
     print("\n" + "=" * 60)
     print("RESULTS")
     print("=" * 60)
 
-    completed = [(db, ds) for (db, ds), s in results.items() if s == "completed"]
-    skipped = [(db, ds) for (db, ds), s in results.items() if s == "skipped"]
-    failed = [(db, ds) for (db, ds), s in results.items() if s == "failed"]
-    pending = [(db, ds) for (db, ds), s in results.items() if s == "pending"]
+    completed = [name for name, s in results.items() if s == "completed"]
+    skipped = [name for name, s in results.items() if s == "skipped"]
+    failed = [name for name, s in results.items() if s == "failed"]
+    pending = [name for name, s in results.items() if s == "pending"]
 
     print(f"Completed: {len(completed)}")
     if skipped:
@@ -411,14 +561,14 @@ def main():
     print(f"Pending:   {len(pending)} (timed out)")
 
     if skipped:
-        print("\nSkipped jobs (no supported index types):")
-        for db, ds in skipped:
-            print(f"  - {db}/{ds}")
+        print("\nSkipped jobs:")
+        for name in skipped:
+            print(f"  - {name}")
 
     if failed:
         print("\nFailed jobs:")
-        for db, ds in failed:
-            print(f"  - {db}/{ds}")
+        for name in failed:
+            print(f"  - {name}")
 
     # Generate merged report and upload to S3
     if completed:

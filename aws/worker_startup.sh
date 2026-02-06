@@ -22,6 +22,15 @@ BENCHMARK_TYPE="{{BENCHMARK_TYPE}}" # e.g., competitive, kdbai-tuning
 PULL_LATEST="{{PULL_LATEST}}"     # e.g., "" or "kdbai" or "all"
 MAX_RUNTIME_MINUTES=120           # Safety timeout
 
+# Tuning-specific variables (empty for competitive benchmarks)
+TUNING_CONFIG="{{TUNING_CONFIG}}"         # e.g., configs/tuning/kdbai-hnsw.yaml
+HNSW_M="{{HNSW_M}}"                       # e.g., 32
+HNSW_EFC="{{HNSW_EFC}}"                   # e.g., 128
+HNSW_NAME="{{HNSW_NAME}}"                 # e.g., M32_efC128
+DOCKER_CONFIG_NAME="{{DOCKER_CONFIG_NAME}}" # e.g., 1wrk_16thr
+DOCKER_THREADS="{{DOCKER_THREADS}}"       # e.g., 16
+DOCKER_NUM_WRK="{{DOCKER_NUM_WRK}}"       # e.g., 1
+
 # =============================================================================
 # Logging (set up FIRST so we capture everything)
 # =============================================================================
@@ -33,12 +42,23 @@ echo "Worker startup: $(date)"
 echo "Database: $DATABASE"
 echo "Dataset: $DATASET"
 echo "Run ID: $RUN_ID"
+if [ -n "$TUNING_CONFIG" ]; then
+    echo "Mode: TUNING"
+    echo "HNSW: M=$HNSW_M efC=$HNSW_EFC ($HNSW_NAME)"
+    echo "Docker: THREADS=$DOCKER_THREADS NUM_WRK=$DOCKER_NUM_WRK ($DOCKER_CONFIG_NAME)"
+fi
 echo "========================================"
 
 # =============================================================================
 # Auto-termination setup (set up EARLY to catch all exits)
 # =============================================================================
-S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${BENCHMARK_TYPE}/${RUN_ID}/jobs/${DATABASE}-${DATASET}"
+# Build job name — includes tuning params for tuning runs
+if [ -n "$HNSW_NAME" ] && [ -n "$DOCKER_CONFIG_NAME" ]; then
+    JOB_NAME="${DATABASE}-${DATASET}-${HNSW_NAME}-${DOCKER_CONFIG_NAME}"
+else
+    JOB_NAME="${DATABASE}-${DATASET}"
+fi
+S3_RESULT_PATH="s3://${S3_BUCKET}/runs/${BENCHMARK_TYPE}/${RUN_ID}/jobs/${JOB_NAME}"
 
 cleanup() {
     EXIT_CODE=$?
@@ -157,12 +177,37 @@ fi
 echo "Running benchmark: $DATABASE on $DATASET"
 cd /app/vectordb-benchmark
 
+# Build benchmark command
+BENCHMARK_CMD="run_benchmark.py --config configs/${DATABASE}.yaml --dataset ${DATASET} --output results"
+
+# Add tuning arguments if this is a tuning run
+if [ -n "$TUNING_CONFIG" ]; then
+    BENCHMARK_CMD="$BENCHMARK_CMD --tuning-config ${TUNING_CONFIG}"
+
+    if [ -n "$HNSW_M" ]; then
+        BENCHMARK_CMD="$BENCHMARK_CMD --hnsw-m ${HNSW_M}"
+    fi
+    if [ -n "$HNSW_EFC" ]; then
+        BENCHMARK_CMD="$BENCHMARK_CMD --hnsw-efc ${HNSW_EFC}"
+    fi
+    if [ -n "$DOCKER_CONFIG_NAME" ]; then
+        BENCHMARK_CMD="$BENCHMARK_CMD --docker-config-name ${DOCKER_CONFIG_NAME}"
+    fi
+fi
+
+# Override THREADS/NUM_WRK if tuning docker params are set
+if [ -n "$DOCKER_THREADS" ]; then
+    export THREADS="$DOCKER_THREADS"
+fi
+if [ -n "$DOCKER_NUM_WRK" ]; then
+    export NUM_WRK="$DOCKER_NUM_WRK"
+fi
+
+echo "Running: $BENCHMARK_CMD"
+
 # Run as ec2-user (who has the Python dependencies installed)
-# -E preserves environment (needed for KDB_LICENSE_B64)
-sudo -E -u ec2-user python3.12 run_benchmark.py \
-    --config configs/${DATABASE}.yaml \
-    --dataset ${DATASET} \
-    --output results
+# -E preserves environment (needed for KDB_LICENSE_B64, THREADS, NUM_WRK)
+sudo -E -u ec2-user python3.12 $BENCHMARK_CMD
 
 BENCHMARK_EXIT_CODE=$?
 echo "Benchmark completed with exit code: $BENCHMARK_EXIT_CODE"

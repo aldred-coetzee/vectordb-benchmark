@@ -496,3 +496,122 @@ class BenchmarkRunner:
             self.client.drop_table(table_name)
 
         return results
+
+    def run_tuning_benchmark(
+        self,
+        tuning_config: Dict[str, Any],
+        metric: str = "L2",
+        docker_config_name: Optional[str] = None,
+    ) -> BenchmarkResults:
+        """
+        Run a tuning benchmark that sweeps multiple HNSW configurations.
+
+        Unlike run_full_benchmark which uses fixed M/efC, this method iterates
+        over multiple HNSW build params from the tuning config. For each
+        hnsw_config: create table -> ingest -> sweep efSearch x indexOnly -> drop.
+
+        No FLAT index is run — recall is computed against pre-computed ground truth.
+
+        Args:
+            tuning_config: Parsed tuning YAML config dict
+            metric: Distance metric (L2 or cosine)
+            docker_config_name: Name of docker config being used (for index_type naming)
+
+        Returns:
+            BenchmarkResults with all tuning results
+        """
+        method_params = tuning_config.get("method_params", {})
+        hnsw_configs = method_params.get("hnsw_configs", [])
+        ef_search_values = method_params.get("efSearch_values", [128, 256, 512])
+        search_options = method_params.get("search_options", {})
+        index_only_values = search_options.get("indexOnly", [False])
+
+        # Get timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Get Docker limits if monitor is available
+        docker_cpu = 0
+        docker_memory_gb = 0
+        if self.monitor:
+            try:
+                limits = self.monitor.get_container_limits()
+                docker_cpu = limits.get("cpu_limit", 0)
+                docker_memory_gb = limits.get("memory_limit_gb", 0)
+            except Exception as e:
+                print(f"Warning: Could not get container limits: {e}")
+
+        results = BenchmarkResults(
+            database_name=self.client.name,
+            timestamp=timestamp,
+            dataset_info=self.dataset.get_info(),
+            docker_cpu_limit=docker_cpu,
+            docker_memory_limit_gb=docker_memory_gb,
+        )
+
+        # Build docker suffix for index_type naming
+        docker_suffix = f"_{docker_config_name}" if docker_config_name else ""
+
+        for hnsw_cfg in hnsw_configs:
+            cfg_name = hnsw_cfg["name"]
+            m_val = hnsw_cfg["M"]
+            efc_val = hnsw_cfg["efConstruction"]
+
+            # Dynamic index_type name from config params
+            index_type_base = f"HNSW_M{m_val}_efC{efc_val}{docker_suffix}"
+
+            print(f"\n{'=' * 80}")
+            print(f"TUNING: {index_type_base}")
+            print(f"  M={m_val}, efConstruction={efc_val}")
+            print(f"{'=' * 80}")
+
+            # Build index config
+            index_config = IndexConfig(
+                name="hnsw_index",
+                index_type="hnsw",
+                params={
+                    "dims": self.dataset.dimensions,
+                    "M": m_val,
+                    "efConstruction": efc_val,
+                    "metric": metric,
+                },
+            )
+
+            # Ingest
+            table_name = "benchmark_tuning"
+            ingest_result = self.run_ingest_benchmark(table_name, index_config)
+            # Override index_type with the tuning-specific name
+            ingest_result.index_type = index_type_base
+            results.ingest_results.append(ingest_result)
+
+            # Sweep efSearch x indexOnly
+            k = max(self.k_values)
+            for ef_search in ef_search_values:
+                if ef_search < k:
+                    print(f"  Skipping efSearch={ef_search} (must be >= k={k})")
+                    continue
+
+                for index_only in index_only_values:
+                    search_params: Dict[str, Any] = {"efSearch": ef_search}
+                    if index_only:
+                        search_params["indexOnly"] = True
+
+                    # Build descriptive suffix for indexOnly
+                    io_suffix = "_idxOnly" if index_only else ""
+                    search_index_type = f"{index_type_base}{io_suffix}"
+
+                    search_config = SearchConfig(
+                        index_name="hnsw_index",
+                        index_type="hnsw",
+                        params=search_params,
+                    )
+
+                    search_result = self.run_search_benchmark(table_name, search_config)
+                    # Override index_type with tuning-specific name
+                    search_result.index_type = search_index_type
+                    results.search_results.append(search_result)
+
+            # Cleanup this config's table before next config
+            print(f"\n  Dropping table for {cfg_name}...")
+            self.client.drop_table(table_name)
+
+        return results

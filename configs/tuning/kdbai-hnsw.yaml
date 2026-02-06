@@ -1,0 +1,49 @@
+# KDB.AI HNSW Parameter Tuning Configuration
+#
+# Sweeps HNSW build params (M, efConstruction), search params (efSearch, indexOnly),
+# and Docker-level params (THREADS, NUM_WRK) to find optimal settings.
+#
+# Method-level params iterate within a single container run.
+# Docker-level params require container stop/restart (one worker per docker_config).
+#
+# Usage:
+#   python run_benchmark.py --config configs/kdbai.yaml --dataset sift-dev \
+#       --tuning-config configs/tuning/kdbai-hnsw.yaml
+
+method_params:
+  hnsw_configs:
+    - name: M16_efC64          # Current competitive baseline
+      M: 16
+      efConstruction: 64
+    - name: M16_efC200         # Same M, much better graph quality
+      M: 16
+      efConstruction: 200
+    - name: M32_efC128         # Denser graph
+      M: 32
+      efConstruction: 128
+    - name: M32_efC200         # Denser + high quality
+      M: 32
+      efConstruction: 200
+    - name: M48_efC200         # Very dense (diminishing returns?)
+      M: 48
+      efConstruction: 200
+
+  efSearch_values: [128, 256, 512]
+
+  search_options:
+    indexOnly: [false, true]   # Does returning only IDs improve QPS?
+
+docker_params:
+  configs:
+    - name: 1wrk_16thr         # Current baseline
+      env:
+        NUM_WRK: "1"
+        THREADS: "16"
+    - name: 2wrk_8thr
+      env:
+        NUM_WRK: "2"
+        THREADS: "8"
+    - name: 4wrk_4thr
+      env:
+        NUM_WRK: "4"
+        THREADS: "4"
