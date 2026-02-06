@@ -8,6 +8,7 @@ Launches worker EC2 instances, monitors progress, and aggregates results.
 import argparse
 import base64
 import json
+import random
 import subprocess
 import sys
 import time
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import boto3
+from botocore.exceptions import ClientError
 
 # AWS Configuration
 AWS_REGION = "us-west-2"
@@ -148,8 +150,12 @@ def launch_worker(
     docker_config_name: str = "",
     docker_threads: str = "",
     docker_num_wrk: str = "",
-) -> Optional[str]:
-    """Launch a worker EC2 instance."""
+    max_retries: int = 3,
+) -> tuple[Optional[str], Optional[str]]:
+    """Launch a worker EC2 instance with retry on transient errors.
+
+    Returns (instance_id, error_message) — one is always None.
+    """
 
     user_data = create_user_data(
         database, dataset, run_id, benchmark_type, pull_latest,
@@ -194,16 +200,41 @@ def launch_worker(
 
     if dry_run:
         print(f"  [DRY RUN] Would launch: {instance_name}")
-        return None
+        return None, None
 
-    try:
-        response = ec2_client.run_instances(**launch_params)
-        instance_id = response["Instances"][0]["InstanceId"]
-        print(f"  Launched: {instance_name} ({instance_id})")
-        return instance_id
-    except Exception as e:
-        print(f"  ERROR launching {instance_name}: {e}")
-        return None
+    # EC2 error codes that are transient and worth retrying
+    retryable_codes = {
+        "InsufficientInstanceCapacity",
+        "RequestLimitExceeded",
+        "Server.InternalError",
+        "Unavailable",
+    }
+
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            response = ec2_client.run_instances(**launch_params)
+            instance_id = response["Instances"][0]["InstanceId"]
+            if attempt > 0:
+                print(f"  Launched: {instance_name} ({instance_id}) (succeeded on attempt {attempt + 1})")
+            else:
+                print(f"  Launched: {instance_name} ({instance_id})")
+            return instance_id, None
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            last_error = f"{error_code}: {e.response['Error']['Message']}"
+            if error_code not in retryable_codes:
+                break  # Non-retryable, fail immediately
+            if attempt < max_retries - 1:
+                delay = (5 * 3 ** attempt) + random.uniform(0, 2)
+                print(f"  Retry {attempt + 1}/{max_retries} for {instance_name} in {delay:.0f}s: {last_error}")
+                time.sleep(delay)
+        except Exception as e:
+            last_error = str(e)
+            break  # Unknown error, don't retry
+
+    print(f"  FAILED to launch {instance_name}: {last_error}")
+    return None, last_error
 
 
 def check_job_status(
@@ -228,35 +259,126 @@ def check_job_status(
         return "unknown"
 
 
+def check_instance_health(
+    ec2_client,
+    job_instances: dict[str, str],
+) -> dict[str, str]:
+    """Check EC2 instance states for pending jobs.
+
+    Args:
+        ec2_client: boto3 EC2 client
+        job_instances: {job_name: instance_id} for jobs to check
+
+    Returns:
+        {job_name: state} for instances that are NOT running/pending.
+        Only returns entries for unhealthy instances (terminated, stopped, etc.).
+    """
+    if not job_instances:
+        return {}
+
+    instance_to_job = {iid: name for name, iid in job_instances.items()}
+    instance_ids = list(job_instances.values())
+
+    try:
+        # describe_instances supports up to 1000 IDs per call
+        unhealthy = {}
+        for i in range(0, len(instance_ids), 100):
+            batch = instance_ids[i:i + 100]
+            response = ec2_client.describe_instances(InstanceIds=batch)
+            for reservation in response["Reservations"]:
+                for instance in reservation["Instances"]:
+                    iid = instance["InstanceId"]
+                    state = instance["State"]["Name"]
+                    if state in ("terminated", "stopped", "shutting-down"):
+                        job_name = instance_to_job[iid]
+                        unhealthy[job_name] = state
+        return unhealthy
+    except Exception as e:
+        print(f"  WARNING: Instance health check failed: {e}")
+        return {}
+
+
 def wait_for_completion(
+    ec2_client,
     s3_client,
     run_id: str,
     job_names: list[str],
+    launched: dict[str, str],
+    failed: dict[str, tuple[str, dict]],
     benchmark_type: str = "competitive",
     timeout_minutes: int = 180,
-) -> dict:
+    relaunch_fn=None,
+) -> tuple[dict[str, str], dict[str, str]]:
     """Wait for all jobs to complete and return status summary.
 
+    Periodically checks S3 for job completion, verifies instance health,
+    and re-launches failed jobs if capacity becomes available.
+
     Args:
+        ec2_client: boto3 EC2 client (for health checks and re-launches)
         s3_client: boto3 S3 client
         run_id: Run identifier
         job_names: List of job directory names (e.g., 'kdbai-sift' or 'kdbai-sift-M32_efC128-1wrk_16thr')
+        launched: {job_name: instance_id} for successfully launched jobs
+        failed: {job_name: (error_message, job_params)} for jobs that failed to launch
         benchmark_type: Benchmark type for S3 path
         timeout_minutes: Maximum wait time
+        relaunch_fn: Callback to re-launch a failed job. Called as relaunch_fn(job_params)
+            and should return (instance_id, error_message).
     """
 
     print(f"\nWaiting for {len(job_names)} jobs to complete (timeout: {timeout_minutes}m)...")
 
+    if failed:
+        print(f"  {len(failed)} jobs failed to launch — will retry within first 30 min")
+
     start_time = time.time()
     timeout_seconds = timeout_minutes * 60
+    relaunch_window_seconds = 30 * 60  # Re-launch attempts within first 30 minutes
 
     results = {job: "pending" for job in job_names}
+    # Mark jobs that failed to launch with a distinct status
+    for job_name in failed:
+        results[job_name] = "launch_failed"
+
+    # Track re-launch attempts per job (max 2)
+    relaunch_attempts: dict[str, int] = {}
+    # Track why jobs failed for final reporting
+    failure_reasons: dict[str, str] = {
+        name: err for name, (err, _) in failed.items()
+    }
+
+    poll_cycle = 0
 
     while time.time() - start_time < timeout_seconds:
-        all_done = True
+        poll_cycle += 1
 
+        # Re-launch failed jobs within the first 30 minutes (before checking completion)
+        elapsed = time.time() - start_time
+        if elapsed < relaunch_window_seconds and relaunch_fn:
+            for job_name in list(failed.keys()):
+                if results[job_name] != "launch_failed":
+                    continue  # Already re-launched successfully or status changed
+                attempts = relaunch_attempts.get(job_name, 0)
+                if attempts >= 2:
+                    continue  # Max re-launch attempts reached
+                relaunch_attempts[job_name] = attempts + 1
+                _, job_params = failed[job_name]
+                print(f"  Re-launching {job_name} (attempt {attempts + 1}/2, "
+                      f"previous: {failure_reasons[job_name]})")
+                instance_id, error = relaunch_fn(job_params)
+                if instance_id:
+                    launched[job_name] = instance_id
+                    results[job_name] = "pending"
+                    del failed[job_name]
+                    failure_reasons.pop(job_name, None)
+                else:
+                    failure_reasons[job_name] = error or "unknown error"
+
+        # Check S3 for job completion
+        all_done = True
         for job_name in job_names:
-            if results[job_name] in ("completed", "failed", "skipped"):
+            if results[job_name] in ("completed", "failed", "skipped", "instance_crashed", "launch_failed"):
                 continue
 
             status = check_job_status(s3_client, run_id, job_name, benchmark_type)
@@ -268,22 +390,44 @@ def wait_for_completion(
         if all_done:
             break
 
+        # Instance health check every 5 cycles (~2.5 min)
+        if poll_cycle % 5 == 0:
+            # Build map of pending jobs that have instances
+            pending_instances = {
+                name: launched[name]
+                for name in job_names
+                if results[name] == "pending" and name in launched
+            }
+            if pending_instances:
+                unhealthy = check_instance_health(ec2_client, pending_instances)
+                for job_name, state in unhealthy.items():
+                    reason = f"instance {state} without uploading results"
+                    print(f"  CRASHED: {job_name} — {reason}")
+                    results[job_name] = "instance_crashed"
+                    failure_reasons[job_name] = reason
+
         # Print status update
         completed = sum(1 for s in results.values() if s == "completed")
         skipped = sum(1 for s in results.values() if s == "skipped")
-        failed = sum(1 for s in results.values() if s == "failed")
+        s3_failed = sum(1 for s in results.values() if s == "failed")
+        crashed = sum(1 for s in results.values() if s == "instance_crashed")
+        launch_failed = sum(1 for s in results.values() if s == "launch_failed")
         pending = sum(1 for s in results.values() if s == "pending")
         parts = [f"{completed} completed"]
         if skipped:
             parts.append(f"{skipped} skipped")
-        if failed:
-            parts.append(f"{failed} failed")
+        if s3_failed:
+            parts.append(f"{s3_failed} failed")
+        if crashed:
+            parts.append(f"{crashed} crashed")
+        if launch_failed:
+            parts.append(f"{launch_failed} launch failed")
         parts.append(f"{pending} pending")
         print(f"  Status: {', '.join(parts)}")
 
         time.sleep(30)  # Check every 30 seconds
 
-    return results
+    return results, failure_reasons
 
 
 def generate_and_upload_report(
@@ -494,13 +638,15 @@ def main():
         )
         print(f"\nRun config saved to s3://{S3_BUCKET}/{run_prefix}/config.json")
 
-    # Launch workers
+    # Launch workers — track successes and failures separately
     print("\nLaunching workers...")
-    instance_ids = []
+    launched = {}   # job_name -> instance_id
+    failed = {}     # job_name -> (error_message, job_params)
 
     if is_tuning:
-        for job in tuning_jobs:
-            instance_id = launch_worker(
+        for i, job in enumerate(tuning_jobs):
+            job_name = job_names[i]
+            instance_id, error = launch_worker(
                 ec2_client,
                 job["database"],
                 job["dataset"],
@@ -516,11 +662,29 @@ def main():
                 docker_num_wrk=job["docker_num_wrk"],
             )
             if instance_id:
-                instance_ids.append(instance_id)
+                launched[job_name] = instance_id
+            elif error:  # Not a dry run
+                # Store job params for potential re-launch
+                failed[job_name] = (error, {
+                    "database": job["database"],
+                    "dataset": job["dataset"],
+                    "run_id": run_id,
+                    "benchmark_type": benchmark_type,
+                    "pull_latest": args.pull_latest,
+                    "hnsw_m": str(job["hnsw_m"]),
+                    "hnsw_efc": str(job["hnsw_efc"]),
+                    "hnsw_name": job["hnsw_name"],
+                    "docker_config_name": job["docker_name"],
+                    "docker_threads": job["docker_threads"],
+                    "docker_num_wrk": job["docker_num_wrk"],
+                })
     else:
+        job_idx = 0
         for db in databases:
             for ds in datasets:
-                instance_id = launch_worker(
+                job_name = job_names[job_idx]
+                job_idx += 1
+                instance_id, error = launch_worker(
                     ec2_client,
                     db,
                     ds,
@@ -530,7 +694,15 @@ def main():
                     dry_run=args.dry_run,
                 )
                 if instance_id:
-                    instance_ids.append(instance_id)
+                    launched[job_name] = instance_id
+                elif error:  # Not a dry run
+                    failed[job_name] = (error, {
+                        "database": db,
+                        "dataset": ds,
+                        "run_id": run_id,
+                        "benchmark_type": benchmark_type,
+                        "pull_latest": args.pull_latest,
+                    })
 
     if args.dry_run:
         print("\n[DRY RUN] No instances launched.")
@@ -538,15 +710,30 @@ def main():
             print(f"  Would launch: {name}")
         return 0
 
-    print(f"\nLaunched {len(instance_ids)} workers")
+    print(f"\nLaunched {len(launched)}/{len(job_names)} workers")
+    if failed:
+        print(f"{len(failed)} jobs failed to launch:")
+        for name, (err, _) in failed.items():
+            print(f"  {name}: {err}")
 
     if args.no_wait:
         print("\n--no-wait specified, exiting without waiting.")
         print(f"Check results at: s3://{S3_BUCKET}/{run_prefix}/")
         return 0
 
-    # Wait for completion
-    results = wait_for_completion(s3_client, run_id, job_names, benchmark_type, args.timeout)
+    # Build re-launch callback
+    def relaunch_fn(job_params: dict) -> tuple[Optional[str], Optional[str]]:
+        """Re-launch a failed job using stored parameters."""
+        return launch_worker(ec2_client, **job_params, dry_run=False)
+
+    # Wait for completion with health checks and re-launch
+    results, failure_reasons = wait_for_completion(
+        ec2_client, s3_client, run_id, job_names,
+        launched, failed,
+        benchmark_type=benchmark_type,
+        timeout_minutes=args.timeout,
+        relaunch_fn=relaunch_fn,
+    )
 
     # Summary
     print("\n" + "=" * 60)
@@ -555,23 +742,48 @@ def main():
 
     completed = [name for name, s in results.items() if s == "completed"]
     skipped = [name for name, s in results.items() if s == "skipped"]
-    failed = [name for name, s in results.items() if s == "failed"]
+    s3_failed = [name for name, s in results.items() if s == "failed"]
+    crashed = [name for name, s in results.items() if s == "instance_crashed"]
+    launch_failed = [name for name, s in results.items() if s == "launch_failed"]
     pending = [name for name, s in results.items() if s == "pending"]
 
-    print(f"Completed: {len(completed)}")
+    print(f"Completed:        {len(completed)}")
     if skipped:
-        print(f"Skipped:   {len(skipped)} (no supported index types)")
-    print(f"Failed:    {len(failed)}")
-    print(f"Pending:   {len(pending)} (timed out)")
+        print(f"Skipped:          {len(skipped)} (no supported index types)")
+    if s3_failed:
+        print(f"Failed:           {len(s3_failed)} (benchmark error)")
+    if crashed:
+        print(f"Instance crashed: {len(crashed)}")
+    if launch_failed:
+        print(f"Launch failed:    {len(launch_failed)} (never started)")
+    if pending:
+        print(f"Timed out:        {len(pending)}")
 
     if skipped:
         print("\nSkipped jobs:")
         for name in skipped:
             print(f"  - {name}")
 
-    if failed:
-        print("\nFailed jobs:")
-        for name in failed:
+    if s3_failed:
+        print("\nFailed jobs (benchmark error):")
+        for name in s3_failed:
+            print(f"  - {name}")
+
+    if crashed:
+        print("\nCrashed instances:")
+        for name in crashed:
+            reason = failure_reasons.get(name, "unknown")
+            print(f"  - {name}: {reason}")
+
+    if launch_failed:
+        print("\nFailed to launch:")
+        for name in launch_failed:
+            reason = failure_reasons.get(name, "unknown")
+            print(f"  - {name}: {reason}")
+
+    if pending:
+        print("\nTimed out (still pending):")
+        for name in pending:
             print(f"  - {name}")
 
     # Generate merged report and upload to S3
@@ -580,7 +792,8 @@ def main():
 
     print(f"\nResults: s3://{S3_BUCKET}/{run_prefix}/")
 
-    return 0 if not failed and not pending else 1
+    any_failures = s3_failed or crashed or launch_failed or pending
+    return 0 if not any_failures else 1
 
 
 if __name__ == "__main__":
