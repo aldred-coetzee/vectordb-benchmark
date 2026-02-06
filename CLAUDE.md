@@ -533,6 +533,10 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 | 12 | Qdrant GIST insert still too large (49MB) | Qdrant + GIST | JSON float estimate of 12 bytes/float too low — GIST floats have long decimals (~20 bytes) | Changed to `dims * 20 + 200` in `qdrant_client.py` |
 | 13 | Qdrant batch search timeout on SIFT | Qdrant + SIFT | 10,000 FLAT queries sent in single HTTP call, server-side brute-force too slow for default timeout | Cap batch at 500 queries + increase client timeout to 300s |
 | 14 | Batch search error kills entire benchmark | All batch DBs | Batch search exception propagates, losing sequential results already collected | Wrap batch search in try/except in `runner.py` |
+| 15 | EC2 launch failures silent and unrecoverable | Orchestrator | `launch_worker()` returned `None` on failure, caller skipped job, waited 180m | Retry with exponential backoff (3 attempts), re-launch in wait loop, instance health checks |
+| 16 | vCPU limit exceeded launching 45 workers | Tuning run | 45 × 16 vCPU = 720, exceeds account limit | 4 GIST jobs never launched. **TODO**: queue jobs with concurrency limit instead of launching all at once |
+| 17 | Docker stop timeout loses results | KDB.AI tuning | `container.stop(timeout=10)` times out → exit code 1 → benchmark.db not uploaded | 3 jobs had results locally but never uploaded. **TODO**: upload benchmark.db before stopping container |
+| 18 | Tuning report averages over different dataset counts | Report generator | `_avg()` averages whatever values exist — configs missing lowest-recall dataset get inflated scores | M32_efC128 reported as 0.955 (2 datasets) vs true 0.919 (3 datasets). **TODO**: fix `generate_tuning_report.py` |
 
 ### Config Improvements
 
@@ -560,6 +564,17 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **Qdrant version fix**: Made `get_version()` more robust with HTTP fallback when gRPC-preferred client can't access REST service API. Config `version` changed from `"latest"` to null (auto-detected). Now correctly reports 1.16.3.
 - **Client + server versions in report**: Database Configuration table now shows both "Server Version" and "Client Version" columns. All 9 clients implement `get_client_version()` returning their Python SDK version via `importlib.metadata`. Stored in new `db_client_version` column in SQLite `runs` table (backward-compatible migration).
 - **Client SDK auto-upgrade on pull-latest**: When `PULL_LATEST` triggers a Docker image pull, the worker now also runs `pip install --upgrade` for the corresponding Python client SDK. Only upgrades the client for the database this worker is running (not all clients). Ensures client/server version compatibility when benchmarking new releases.
+- **Orchestrator launch retry**: `launch_worker()` retries transient EC2 errors (`InsufficientInstanceCapacity`, `RequestLimitExceeded`, `Server.InternalError`) up to 3 times with exponential backoff (5s, 15s, 45s + jitter). Non-retryable errors fail immediately. Returns `(instance_id, error)` tuple for tracking.
+- **Orchestrator re-launch and health checks**: `wait_for_completion()` re-launches failed jobs within the first 30 minutes (max 2 attempts per job, in case capacity frees up). Every ~2.5 min, calls `describe_instances()` to detect crashed workers (terminated/stopped without uploading `status.json`). Results summary now distinguishes: completed, failed (benchmark error), instance crashed, launch failed (never started), timed out.
+- **AWS resource cleanup**: No orphan volumes/ENIs/EIPs from terminated instances (`InstanceInitiatedShutdownBehavior=terminate` + `DeleteOnTermination` on root volumes works correctly). Worker-v1 AMI (`ami-0f9bf04496aedd923`, 50GB, $2.50/mo) can be deregistered — superseded by worker-v2.
+
+**Run 2026-02-06-1750** (KDB.AI tuning: 15 configs × 3 datasets = 45 jobs):
+- 37/45 jobs completed. 4 never launched (vCPU limit), 3 docker stop timeout (data exists but not uploaded), 1 worker never reported.
+- Report: `results/kdbai-tuning-2026-02-06-1750.html`, DB: `results/vectordb-benchmark-kdbai-tuning-2026-02-06-1750.db`
+- **Conclusions invalid** — report averages over different dataset counts. M32_efC128 ranked #1 but only because GloVe-100 (lowest recall) was missing.
+- **Preliminary recommendation**: M=32, efC=128, 2wrk_8thr (best balance of recall 0.919, ingest ~4,600 v/s, QPS 172). Runner-up: M=32, efC=200 (+0.5% recall, -15% ingest).
+- M=48 data incomplete (all GIST jobs failed) — cannot recommend with confidence yet.
+- Needs re-run after fixing bugs #16-18 for clean data.
 
 **Run 2026-02-05-1816** (6 DBs × sift + gist, excludes pgvector + LanceDB):
 - 12/16 jobs completed with data. Qdrant empty (bugs #12-14, fixed). LanceDB skipped (expected).
@@ -667,7 +682,7 @@ python aws/orchestrator.py --no-wait
 ### Open Questions
 - Should embedded DBs (FAISS, LanceDB) run differently than client-server?
 - Spot instances vs on-demand? (spot cheaper but can be interrupted)
-- Orphan cleanup: orchestrator should tag workers and terminate on exit (not yet implemented)
+- ~~Orphan cleanup: orchestrator should tag workers and terminate on exit~~ — Verified clean: `InstanceInitiatedShutdownBehavior=terminate` + `DeleteOnTermination` handles this. No orphan resources found.
 
 ### Future: Filtered & Hybrid Search (Out of Scope for Now)
 
