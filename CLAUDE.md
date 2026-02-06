@@ -539,6 +539,7 @@ python run_aws.py --pull-report runs/2024-02-03-1430     # Download report
 - **pull_run.py**: Single command to pull AWS run results from S3, merge per-job DBs, and generate a named report. Usage: `python scripts/pull_run.py 2026-02-05-1816`. Output: `results/benchmark-{run_id}.db` + `results/report-{run_id}.html`. All merged runs share a `run_label` column for traceability.
 - **Batch search resilience**: Batch search failures are now non-fatal — sequential results are preserved even if batch search times out or errors (bugs #12-14).
 - **Auto report in S3**: Orchestrator now generates a merged report after all jobs complete and uploads `report.html` + `benchmark.db` to `s3://{bucket}/runs/{run_id}/`. Startup script installs pyyaml only (result dataclasses extracted to `benchmark/results.py` to break the `db.py` → `runner.py` → numpy/docker import chain).
+- **Docker launch commands in report**: The Benchmark Configuration section now includes a "Docker Launch Commands" subsection showing the exact `docker run` command for each client-server database. Built from config YAML `container` sections. Secrets/shell variables are redacted. Embedded databases (FAISS, LanceDB) are skipped.
 
 **Run 2026-02-05-1816** (6 DBs × sift + gist, excludes pgvector + LanceDB):
 - 12/16 jobs completed with data. Qdrant empty (bugs #12-14, fixed). LanceDB skipped (expected).

@@ -1678,6 +1678,51 @@ class ComparisonReportGenerator:
         return f'{sort_note}<div class="table-wrap"><table><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table></div>'
 
     # -----------------------------------------------------------------
+    # Docker command builder
+    # -----------------------------------------------------------------
+    @staticmethod
+    def _build_docker_command(db_name: str, config: Dict[str, Any]) -> Optional[str]:
+        """Build a `docker run` command string from a database config dict."""
+        container = config.get("container")
+        if not container:
+            return None
+
+        parts = ["docker run -d"]
+        parts.append(f"  --name benchmark-{db_name.lower()}")
+
+        if container.get("cpus"):
+            parts.append(f"  --cpus {container['cpus']}")
+        if container.get("memory"):
+            parts.append(f"  --memory {container['memory']}")
+        if container.get("security_opt"):
+            for opt in container["security_opt"]:
+                parts.append(f"  --security-opt {opt}")
+
+        for port in container.get("ports", []):
+            parts.append(f"  -p {port}")
+
+        for key, val in container.get("env", {}).items():
+            # Redact values that reference shell variables or look like secrets
+            if "${" in str(val) or key.upper() in (
+                "POSTGRES_PASSWORD", "KDB_LICENSE_B64",
+            ):
+                display_val = "<redacted>"
+            else:
+                display_val = val
+            parts.append(f"  -e {key}={display_val}")
+
+        for vol in container.get("volumes", []):
+            parts.append(f"  -v {vol}")
+
+        image = container.get("image", "unknown")
+        if container.get("command"):
+            parts.append(f"  {image} {container['command']}")
+        else:
+            parts.append(f"  {image}")
+
+        return " \\\n".join(parts)
+
+    # -----------------------------------------------------------------
     # Configuration section
     # -----------------------------------------------------------------
     def _render_config_section(
@@ -1754,6 +1799,25 @@ class ComparisonReportGenerator:
         lines.append(f'''<div class="table-wrap"><table>
         <thead><tr><th>Database</th><th>Version</th><th>Architecture</th><th>Protocol</th><th>Persistence</th><th>License</th></tr></thead>
         <tbody>{db_rows}</tbody></table></div>''')
+
+        # Docker launch commands (client-server databases only)
+        docker_cmds = []
+        seen_docker = set()
+        for db_name in sorted(set(r.database for r in runs)):
+            if db_name in seen_docker:
+                continue
+            seen_docker.add(db_name)
+            sample = next(r for r in runs if r.database == db_name)
+            cmd = self._build_docker_command(db_name, sample.config)
+            if cmd:
+                docker_cmds.append((db_name, cmd))
+
+        if docker_cmds:
+            lines.append("<h4>Docker Launch Commands</h4>")
+            for db_name, cmd in docker_cmds:
+                escaped = cmd.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                lines.append(f"<h5>{db_name}</h5>")
+                lines.append(f'<pre><code>{escaped}</code></pre>')
 
         # Database notes
         notes = [(r.database, r.metadata.get("notes")) for r in runs if r.metadata.get("notes")]
