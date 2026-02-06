@@ -4,6 +4,7 @@ import json
 import re
 import socket
 import sqlite3
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -72,6 +73,10 @@ class BenchmarkDatabase:
             pass  # Column already exists
         try:
             cursor.execute("ALTER TABLE runs ADD COLUMN run_label TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            cursor.execute("ALTER TABLE runs ADD COLUMN instance_type TEXT")
         except sqlite3.OperationalError:
             pass  # Column already exists
 
@@ -170,6 +175,28 @@ class BenchmarkDatabase:
             self._conn.close()
             self._conn = None
 
+    @staticmethod
+    def _detect_instance_type() -> Optional[str]:
+        """Detect EC2 instance type via IMDSv2. Returns None if not on EC2."""
+        try:
+            # IMDSv2: get token first
+            req = urllib.request.Request(
+                "http://169.254.169.254/latest/api/token",
+                headers={"X-aws-ec2-metadata-token-ttl-seconds": "30"},
+                method="PUT",
+            )
+            with urllib.request.urlopen(req, timeout=1) as resp:
+                token = resp.read().decode()
+            # Fetch instance type
+            req = urllib.request.Request(
+                "http://169.254.169.254/latest/meta-data/instance-type",
+                headers={"X-aws-ec2-metadata-token": token},
+            )
+            with urllib.request.urlopen(req, timeout=1) as resp:
+                return resp.read().decode().strip()
+        except Exception:
+            return None
+
     def create_run(
         self,
         database: str,
@@ -210,6 +237,7 @@ class BenchmarkDatabase:
         if start_time is None:
             start_time = timestamp
         hostname = socket.gethostname()
+        instance_type = self._detect_instance_type()
         config_json = json.dumps(config) if config else None
         benchmark_config_json = json.dumps(benchmark_config) if benchmark_config else None
 
@@ -217,12 +245,12 @@ class BenchmarkDatabase:
             INSERT INTO runs (
                 timestamp, start_time, database, db_version, dataset, vector_count,
                 dimensions, cpus, memory_gb, config_json, benchmark_config_json,
-                hostname, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                hostname, notes, instance_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             timestamp, start_time, database, db_version, dataset, vector_count,
             dimensions, cpus, memory_gb, config_json, benchmark_config_json,
-            hostname, notes
+            hostname, notes, instance_type
         ))
 
         conn.commit()

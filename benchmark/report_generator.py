@@ -50,6 +50,7 @@ class RunData:
     cpus: Optional[float] = None
     memory_gb: Optional[float] = None
     hostname: Optional[str] = None
+    instance_type: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     config: Dict[str, Any] = field(default_factory=dict)
     ingest_results: List[IngestData] = field(default_factory=list)
@@ -207,6 +208,7 @@ class ReportGenerator:
             cpus=row.get("cpus"),
             memory_gb=row.get("memory_gb"),
             hostname=row.get("hostname"),
+            instance_type=row.get("instance_type"),
             metadata=metadata,
             config=config,
             ingest_results=ingest_results,
@@ -1755,9 +1757,12 @@ class ComparisonReportGenerator:
                 worker_mem_raw = max(r.memory_gb for r in worker_runs)
                 worker_mem = int(worker_mem_raw) if worker_mem_raw == int(worker_mem_raw) else worker_mem_raw
             else:
-                worker_vcpus = aws_info.get("worker", {}).get("vcpus", "N/A")
-                worker_mem = aws_info.get("worker", {}).get("memory_gb", "N/A")
-            worker_type = aws_info.get("worker", {}).get("instance_type", "N/A")
+                worker_vcpus = "N/A"
+                worker_mem = "N/A"
+
+            # Worker instance type from run data, fall back to config
+            worker_types = set(r.instance_type for r in runs if r.instance_type)
+            worker_type = next(iter(worker_types), None) or aws_info.get("worker", {}).get("instance_type", "N/A")
 
             # Orchestrator from config (not in results DB — it doesn't run benchmarks)
             orch = aws_info.get("orchestrator", {})
