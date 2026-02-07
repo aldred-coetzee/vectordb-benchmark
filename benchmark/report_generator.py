@@ -1947,7 +1947,7 @@ class ComparisonReportGenerator:
     # Methodology
     # -----------------------------------------------------------------
     def _render_methodology(self) -> str:
-        bench_config = self._load_benchmark_config()
+        bench_config = self._rg._load_benchmark_config()
         hnsw_cfg = bench_config.get("indexes", {}).get("hnsw", {})
         m_val = hnsw_cfg.get("M", 48)
         efc_val = hnsw_cfg.get("efConstruction", 200)
