@@ -131,15 +131,29 @@ aws sso login --profile vectordb
 ### Option 1: Launch Template (Console)
 
 1. Go to EC2 Console > Launch Templates
-2. Select template:
-   - **`vectordb-benchmark-full`** for competitive benchmark (all databases)
-   - **`vectordb-benchmark-kdbai-tuning`** for KDB.AI tuning (parameter sweep)
+2. Select template (see defaults below)
 3. Click "Launch instance from template"
-4. Optionally edit tags:
-   - `Databases`: comma-separated list (remove entries to run subset)
-   - `Datasets`: comma-separated list
-   - `PullLatest`: `all`, specific DBs, or remove to skip
+4. Optionally edit instance tags to override defaults (see tables below)
 5. Launch — orchestrator handles everything automatically
+
+#### `vectordb-benchmark-full` (Competitive)
+
+Benchmark type and databases are fixed in the template's UserData. Datasets and image freshness are configurable via instance tags at launch:
+
+| Tag | Default | Override |
+|-----|---------|----------|
+| `Databases` | `faiss,qdrant,milvus,redis,chroma,weaviate,kdbai,kdbai-faiss` | Remove entries to run a subset |
+| `Datasets` | `sift,gist,glove-100,dbpedia-openai` | Remove entries to run a subset |
+| `PullLatest` | `all` | Comma-separated list of DBs, or delete tag to use AMI-baked images |
+
+#### `vectordb-benchmark-kdbai-tuning` (Tuning)
+
+Database is fixed to `kdbai`. HNSW configs and docker configs come from `configs/tuning/kdbai-tuning.yaml` (not overridable via tags — edit the YAML and push before launching). Datasets and image freshness are configurable:
+
+| Tag | Default | Override |
+|-----|---------|----------|
+| `Datasets` | `sift,glove-100,gist` | Remove entries for quick test (no dbpedia-openai — OOMs on 1536D) |
+| `PullLatest` | `kdbai` | Delete tag to use AMI-baked image |
 
 ### Option 2: CLI
 
