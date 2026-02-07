@@ -40,9 +40,15 @@ All queries sent in a single API call. Measures throughput under batch workloads
 
 ## How We Measure
 
-### Test Environment
+### Test Environment and Run Isolation
 
-All benchmarks run on identical AWS `m5.4xlarge` instances (16 vCPU, 64 GB RAM). Each database gets its own isolated instance — no resource contention between databases. Docker containers are configured with 16 CPUs and 64 GB memory.
+All benchmarks run on identical AWS `m5.4xlarge` instances (16 vCPU, 64 GB RAM). Docker containers are configured with 16 CPUs and 64 GB memory.
+
+**Isolation model**: Each benchmark job runs on a dedicated EC2 instance. The database container and benchmark process are the only workloads on the machine — no resource contention between databases or between jobs. This ensures one database's memory pressure, CPU usage, or background tasks cannot affect another's measurements.
+
+**Parallelization**: All jobs launch simultaneously (subject to account vCPU limits). For competitive runs, this means up to 28 instances running in parallel (7 databases x 4 datasets). For tuning runs, up to 9 instances (3 datasets x 3 docker configs). Workers are fully independent — no cross-worker communication. The orchestrator monitors progress by polling S3 status files.
+
+**Local runs** do not have this isolation. `run_all.py` runs databases sequentially on the same machine, so system state (OS page cache, memory fragmentation) may carry across databases. For comparable measurements, use AWS or restart between databases.
 
 ### Two Benchmark Flows
 

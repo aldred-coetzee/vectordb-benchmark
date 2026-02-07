@@ -191,7 +191,12 @@ Orchestrator (t3.small)              Workers (m5.4xlarge × N)
          └──────── S3 Bucket ─────────────────┘
 ```
 
-**Job model**: One EC2 instance per (database, dataset) pair. Each worker runs a single benchmark, uploads results to S3, and self-terminates.
+**Job model**: Each job gets a dedicated EC2 instance (m5.4xlarge, 16 vCPU, 64 GB). The benchmark process and database container run on the same instance with no other workloads — full hardware isolation between jobs. All jobs launch in parallel (subject to account vCPU limits).
+
+- **Competitive**: One job per (database, dataset) pair. 7 databases x 4 datasets = 28 parallel workers.
+- **KDB.AI Tuning**: One job per (dataset, docker config) pair. Each worker sweeps all HNSW configs (M/efConstruction) sequentially. 3 datasets x 3 docker configs = 9 parallel workers (each runs 5 HNSW configs).
+
+Workers are independent — no cross-worker communication. The orchestrator coordinates via S3 status files only.
 
 **Orchestrator flow** (`aws/orchestrator.py`):
 1. Parse tags from EC2 instance metadata (Databases, Datasets, PullLatest)

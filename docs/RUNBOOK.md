@@ -157,6 +157,15 @@ python aws/orchestrator.py --databases kdbai --pull-latest kdbai    # Pull fresh
 python aws/orchestrator.py --no-wait                                # Fire and forget
 ```
 
+### How AWS Runs Work
+
+Each job gets a **dedicated EC2 instance** (m5.4xlarge). The database container and benchmark process are the only workloads on the machine — full isolation between jobs. All jobs launch in parallel:
+
+- **Competitive**: Up to 28 workers (7 DBs x 4 datasets), each running one database on one dataset
+- **Tuning**: Up to 9 workers (3 datasets x 3 docker configs), each sweeping all 5 HNSW configs sequentially
+
+Workers upload results to S3 and self-terminate. The orchestrator monitors progress, re-launches failures (within 30 min), then merges all per-job SQLite databases into a single report.
+
 ### Monitoring a Run
 
 Workers auto-terminate on completion. To check progress:
