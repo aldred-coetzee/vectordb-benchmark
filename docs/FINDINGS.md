@@ -4,7 +4,7 @@ All benchmarks ran on AWS m5.4xlarge (16 vCPU, 64 GB), Docker containers with 16
 
 This document covers results from two separate benchmark flows:
 
-1. **Competitive benchmark** (run 2026-02-07-0010): 8 databases compared head-to-head on fixed HNSW parameters (M=16, efC=64) across 4 datasets. Answers: "How does KDB.AI compare to competitors?"
+1. **Competitive benchmark** (run 2026-02-07-0010): 8 databases compared head-to-head on fixed HNSW parameters (M=16, efC=64) across 4 datasets. pgvector excluded from AWS runs (HNSW build too slow). Answers: "How does KDB.AI compare to competitors?"
 
 2. **KDB.AI tuning benchmark** (run 2026-02-07-0915): 45 KDB.AI configurations (5 HNSW param sets x 3 docker threading configs x 3 datasets). Answers: "What KDB.AI HNSW parameters maximize recall and throughput?"
 
@@ -42,14 +42,14 @@ This document covers results from two separate benchmark flows:
 
 | Database | SIFT | GIST | GloVe-100 | DBpedia |
 |----------|------|------|-----------|---------|
-| Qdrant | 0.999 | 0.966 | 0.943 | 0.992 |
+| Qdrant | 0.998 | 0.966 | 0.943 | 0.992 |
+| Milvus | 0.994 | -- | 0.881 | -- |
 | FAISS | 0.993 | 0.862 | 0.849 | 0.975 |
 | KDB.AI (FAISS) | 0.993 | 0.862 | 0.852 | -- |
-| Milvus | -- | -- | 0.932 | -- |
-| Redis | 0.972 | 0.867 | 0.831 | 0.993 |
-| Weaviate | 0.973 | 0.854 | 0.821 | 1.000 |
+| Redis | 0.989 | 0.862 | 0.841 | 0.972 |
 | KDB.AI | 0.982 | 0.867 | 0.771 | 0.954 |
-| Chroma | 0.969 | 0.747 | 0.767 | 0.951 |
+| Weaviate | 0.975 | 0.858 | 0.847 | 0.974 |
+| Chroma | 0.969 | 0.747 | 0.767 | 0.950 |
 
 ### Per-Dataset QPS (HNSW ef=256)
 
@@ -58,11 +58,11 @@ This document covers results from two separate benchmark flows:
 | FAISS | 1,434 | 513 | 1,386 | 452 |
 | Chroma | 426 | 282 | 427 | 255 |
 | Qdrant | 330 | 168 | 295 | 155 |
+| Milvus | 292 | -- | 175 | -- |
+| Redis | 242 | 146 | 266 | 103 |
 | KDB.AI | 261 | 148 | 200 | 114 |
-| Milvus | 431 | -- | 235 | -- |
-| Redis | 254 | 138 | 220 | 78 |
-| Weaviate | 214 | 170 | 147 | 170 |
-| KDB.AI (FAISS) | 100 | 68 | 92 | -- |
+| KDB.AI (FAISS) | 100 | 67 | 92 | -- |
+| Weaviate | 93 | 84 | 92 | 85 |
 
 ## KDB.AI-Specific Findings
 
@@ -71,7 +71,7 @@ This document covers results from two separate benchmark flows:
 KDB.AI (qHnsw) ranks 6th/7th on recall overall. The gap is largest on cosine-metric datasets:
 
 - **GloVe-100 (cosine)**: KDB.AI recall=0.771 vs Qdrant 0.943 (gap: 0.172)
-- **SIFT (L2)**: KDB.AI recall=0.982 vs Qdrant 0.999 (gap: 0.017)
+- **SIFT (L2)**: KDB.AI recall=0.982 vs Qdrant 0.998 (gap: 0.016)
 
 The FAISS-based `hnsw` variant achieves recall=0.852 on GloVe-100 (8 points higher than qHnsw), suggesting `qHnsw`'s cosine distance implementation may be less optimal.
 
@@ -190,3 +190,11 @@ The QPS noise reduction fixes (cache warming, scaled warmup, query padding) redu
 1. **Cosine recall gap**: qHnsw recall on cosine datasets lags FAISS hnsw by 8 points (GloVe). Root cause unclear — may be in qHnsw's distance computation or graph construction for angular distance.
 2. **QPS stalls**: Intermittent server-side stalls cause 5-10x QPS drops on random efSearch points. Not reproducible — appears to be GC or internal buffer management.
 3. **Chroma efSearch**: `collection.modify(configuration=...)` doesn't change hnswlib ef. All Chroma results are at ef=64.
+4. **pgvector excluded**: Not included in competitive AWS runs — HNSW build on high-dimensional datasets is extremely slow (times out at 2 hours on GIST).
+
+## See Also
+
+- [METHODOLOGY.md](METHODOLOGY.md) — how measurements are taken, known caveats
+- [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) — tunable parameters and recommended values
+- [RUNBOOK.md](RUNBOOK.md) — how to run benchmarks and reproduce results
+- [ARCHITECTURE.md](ARCHITECTURE.md) — code structure and data flow

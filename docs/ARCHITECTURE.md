@@ -2,7 +2,7 @@
 
 ## Overview
 
-This tool benchmarks 9 vector databases on standardized datasets, measuring ingest speed, query throughput, latency, and recall accuracy. It runs locally via Docker or at scale on AWS.
+This tool benchmarks vector databases on standardized datasets, measuring ingest speed, query throughput, latency, and recall accuracy. It supports 9 databases (8 active — LanceDB excluded due to IVF-only indexes). It runs locally via Docker or at scale on AWS.
 
 ```
 run_benchmark.py          CLI entry point (single DB)
@@ -47,7 +47,7 @@ The tool supports two distinct benchmark flows, each with its own purpose, job m
 
 Compares all databases against each other on the same HNSW parameters (M=16, efConstruction=64). Used to rank databases on recall, QPS, latency, and ingest speed.
 
-- **Scope**: 7+ databases x 4 datasets = 28+ jobs
+- **Scope**: 8 databases x 4 datasets = 32 jobs (minus exclusions, ~30 active)
 - **Parameters**: Fixed M and efConstruction (from `benchmark.yaml`), sweep efSearch
 - **Runner method**: `run_full_benchmark()` — tests both FLAT and HNSW indexes, includes batch search
 - **Report**: `ComparisonReportGenerator` — cross-database tables, per-dataset breakdowns
@@ -86,21 +86,22 @@ Key function: `get_client()` (~line 770) maps database names to client classes. 
 ```
 For each index type [flat, hnsw]:
   1. run_ingest_benchmark() → create table, insert vectors, measure throughput
-  2. For each efSearch value [128, 256, 512]:
-     - _warm_cache() → 1000 untimed queries (pre-sweep)
+  2. _warm_cache() → 1000 untimed queries (pre-sweep, once before ef loop)
+  3. For each efSearch value [128, 256, 512]:
      - run_search_benchmark() → timed queries, collect latencies + IDs
-  3. For each efSearch (if has_batch_search):
+  4. For each efSearch (if has_batch_search):
      - run_batch_search_benchmark() → all queries in one API call
-  4. drop_table()
+  5. drop_table()
 ```
 
 **`run_tuning_benchmark()`** (~line 562):
 ```
 For each HNSW config (M, efConstruction):
   1. Ingest with this config
-  2. For each efSearch × indexOnly combination:
+  2. _warm_cache() → 1000 untimed queries (pre-sweep)
+  3. For each efSearch × indexOnly combination:
      - run_search_benchmark()
-  3. Drop table, repeat with next config
+  4. Drop table, repeat with next config
 ```
 
 **`run_search_benchmark()`** (~line 167):
@@ -193,7 +194,7 @@ Orchestrator (t3.small)              Workers (m5.4xlarge × N)
 
 **Job model**: Each job gets a dedicated EC2 instance (m5.4xlarge, 16 vCPU, 64 GB). The benchmark process and database container run on the same instance with no other workloads — full hardware isolation between jobs. All jobs launch in parallel (subject to account vCPU limits). Workers are independent — no cross-worker communication. The orchestrator coordinates via S3 status files only.
 
-- **Competitive**: One job per (database, dataset) pair. 7 databases x 4 datasets = 28 parallel workers.
+- **Competitive**: One job per (database, dataset) pair. 8 databases x 4 datasets = 32 jobs minus exclusions = ~30 parallel workers.
 - **KDB.AI Tuning**: One job per (dataset, HNSW config, docker config) triple. 3 datasets x 5 HNSW configs x 3 docker configs = 45 parallel workers.
 
 **Orchestrator**: A lightweight t3.small instance runs `orchestrator.py`. It launches all workers, polls S3 for completion, re-launches failures within 30 minutes, then merges per-job SQLite databases into a single report. Each benchmark type has its own AWS launch template:
@@ -227,3 +228,10 @@ Orchestrator (t3.small)              Workers (m5.4xlarge × N)
 - **Non-fatal batch search**: Batch search failures are caught and don't lose sequential results
 - **Results before cleanup**: Worker uploads results to S3 before stopping containers (docker stop can timeout)
 - **`results.py` decoupled from `runner.py`**: Dataclasses in separate module to avoid importing numpy/docker on orchestrator
+
+## See Also
+
+- [METHODOLOGY.md](METHODOLOGY.md) — what we measure, how, known caveats
+- [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) — all tunable parameters
+- [FINDINGS.md](FINDINGS.md) — benchmark results and KDB.AI analysis
+- [RUNBOOK.md](RUNBOOK.md) — step-by-step instructions to run benchmarks

@@ -50,7 +50,7 @@ This tool supports two separate benchmark flows. Choose the right one for your g
 | **HNSW params** | Fixed (M=16, efC=64) | Swept (5 combinations of M/efC) |
 | **Docker config** | Single config per DB | Swept (3 threading configs) |
 | **Index types** | FLAT + HNSW + batch | HNSW only |
-| **Jobs** | 7 DBs x 4 datasets = 28 | 3 datasets x 5 HNSW x 3 docker = 45 |
+| **Jobs** | 8 DBs x 4 datasets - exclusions = ~30 | 3 datasets x 5 HNSW x 3 docker = 45 |
 | **AWS template** | `vectordb-benchmark-full` | `vectordb-benchmark-kdbai-tuning` |
 | **Config** | `benchmark.yaml` + `configs/<db>.yaml` | `configs/tuning/kdbai-tuning.yaml` |
 | **Report** | Cross-database comparison | Parameter impact analysis |
@@ -117,7 +117,7 @@ python run_benchmark.py --config configs/kdbai.yaml --dataset sift \
     --tuning-config configs/tuning/kdbai-tuning.yaml --docker-config-name 2wrk_8thr
 ```
 
-Each tuning job tests one dataset with all HNSW configs (M/efConstruction combinations) from the tuning YAML. On AWS, each (dataset, docker config) pair runs as a separate worker.
+Locally, a single tuning job sweeps all HNSW configs from the tuning YAML on one dataset. On AWS, each (dataset, HNSW config, docker config) combination runs as a separate worker — `_filter_tuning_config()` filters the YAML to a single HNSW config per worker.
 
 ## Running Benchmarks on AWS
 
@@ -175,7 +175,7 @@ python aws/orchestrator.py --no-wait                                # Fire and f
 
 Launching a template starts a lightweight **orchestrator** (t3.small) that builds the job matrix and launches one **worker** (m5.4xlarge) per job. Each worker gets a dedicated instance — the database container and benchmark process are the only workloads on the machine, ensuring full isolation between jobs. All workers launch in parallel:
 
-- **Competitive**: 28 workers (7 DBs x 4 datasets), each running one database on one dataset
+- **Competitive**: ~30 workers (8 DBs x 4 datasets minus exclusions), each running one database on one dataset
 - **Tuning**: 45 workers (3 datasets x 5 HNSW configs x 3 docker configs), each running one combination
 
 Workers upload results to S3 and self-terminate. The orchestrator monitors progress, re-launches failures (within 30 min), then merges all per-job SQLite databases into a single report. The orchestrator self-terminates when all jobs are done.
@@ -216,14 +216,14 @@ Output:
 
 ### Costs
 
-| Component | Cost per Run |
-|-----------|-------------|
-| Workers (28 jobs x ~45 min) | ~$16 |
-| Orchestrator (3-4 hrs) | ~$0.04 |
-| S3 | ~$0.01 |
-| **Total** | **~$16-20** |
+| | Competitive | Tuning |
+|---|---|---|
+| Workers | ~30 jobs x ~45 min = ~$17 | 45 jobs x ~20 min = ~$11 |
+| Orchestrator | 3-4 hrs = ~$0.04 | 1-2 hrs = ~$0.02 |
+| S3 | ~$0.01 | ~$0.01 |
+| **Total** | **~$17** | **~$11** |
 
-Standby cost: ~$0.80/month (AMI snapshots).
+Workers are m5.4xlarge at $0.768/hr. Tuning jobs are shorter (one HNSW config per worker vs FLAT + HNSW + batch). Standby cost: ~$0.80/month (AMI snapshots).
 
 ## Generating Reports
 
@@ -291,3 +291,10 @@ Account has a vCPU limit (default ~64 for on-demand). Running 45 tuning jobs x 1
 5. Add pip install + docker pull cases to `aws/worker_startup.sh`
 6. Test locally: `python run_benchmark.py --config configs/<name>.yaml --dataset sift-dev`
 7. Add any exclusions/caveats to `benchmark.yaml`
+
+## See Also
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — code structure and data flow
+- [METHODOLOGY.md](METHODOLOGY.md) — what we measure, how, known caveats
+- [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) — all tunable parameters
+- [FINDINGS.md](FINDINGS.md) — benchmark results and KDB.AI analysis

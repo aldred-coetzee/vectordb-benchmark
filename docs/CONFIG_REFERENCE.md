@@ -197,17 +197,23 @@ method_params:
   search_options:
     indexOnly: [false, true]           # Test with and without post-filtering
 
-  docker_configs:
+docker_params:
+  configs:
     - name: 1wrk_16thr
-      THREADS: 16
-      NUM_WRK: 1
+      env:
+        NUM_WRK: "1"
+        THREADS: "16"
     - name: 2wrk_8thr
-      THREADS: 8
-      NUM_WRK: 2
+      env:
+        NUM_WRK: "2"
+        THREADS: "8"
     - name: 4wrk_4thr
-      THREADS: 4
-      NUM_WRK: 4
+      env:
+        NUM_WRK: "4"
+        THREADS: "4"
 ```
+
+`method_params` are swept within a single container run. `docker_params` require a container restart (different threading config), so on AWS each docker config gets its own worker instance.
 
 Total jobs: 3 datasets x 5 HNSW configs x 3 docker configs = 45
 
@@ -256,3 +262,10 @@ Output:
   RUN_ID                   Run ID (e.g., 2026-02-07-0010)
   --benchmark-type TYPE    competitive or kdbai-tuning (default: competitive)
 ```
+
+## See Also
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — code structure and data flow
+- [METHODOLOGY.md](METHODOLOGY.md) — what we measure, how, known caveats
+- [FINDINGS.md](FINDINGS.md) — benchmark results and recommended configs
+- [RUNBOOK.md](RUNBOOK.md) — step-by-step instructions to run benchmarks
