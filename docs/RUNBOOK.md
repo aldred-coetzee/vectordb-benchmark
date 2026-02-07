@@ -39,7 +39,23 @@ python scripts/generate_dev_datasets.py --datasets sift
 python run_benchmark.py --config configs/faiss.yaml --dataset sift-dev
 ```
 
-## Running Benchmarks Locally
+## Two Benchmark Types
+
+This tool supports two separate benchmark flows. Choose the right one for your goal:
+
+| | Competitive | KDB.AI Tuning |
+|---|---|---|
+| **Purpose** | Compare databases head-to-head | Find optimal KDB.AI HNSW parameters |
+| **Databases** | All 7+ databases | KDB.AI only |
+| **HNSW params** | Fixed (M=16, efC=64) | Swept (5 combinations of M/efC) |
+| **Docker config** | Single config per DB | Swept (3 threading configs) |
+| **Index types** | FLAT + HNSW + batch | HNSW only |
+| **Jobs** | 7 DBs x 4 datasets = 28 | 3 datasets x 5 HNSW x 3 docker = 45 |
+| **AWS template** | `vectordb-benchmark-full` | `vectordb-benchmark-kdbai-tuning` |
+| **Config** | `benchmark.yaml` + `configs/<db>.yaml` | `configs/tuning/kdbai-tuning.yaml` |
+| **Report** | Cross-database comparison | Parameter impact analysis |
+
+## Running Competitive Benchmarks Locally
 
 ### Single Database
 
@@ -87,6 +103,22 @@ python run_benchmark.py --config configs/kdbai.yaml --ef-search 64 128 256 512
 python run_benchmark.py --config configs/kdbai.yaml --cold
 ```
 
+## Running KDB.AI Tuning Benchmarks Locally
+
+The tuning benchmark sweeps HNSW build parameters and Docker threading configs for KDB.AI. Configuration is in `configs/tuning/kdbai-tuning.yaml`.
+
+```bash
+# Run tuning sweep on a single dataset
+python run_benchmark.py --config configs/kdbai.yaml --dataset sift \
+    --tuning-config configs/tuning/kdbai-tuning.yaml
+
+# Run with a specific docker config name (for index_type suffix in results)
+python run_benchmark.py --config configs/kdbai.yaml --dataset sift \
+    --tuning-config configs/tuning/kdbai-tuning.yaml --docker-config-name 2wrk_8thr
+```
+
+Each tuning job tests one dataset with all HNSW configs (M/efConstruction combinations) from the tuning YAML. On AWS, each (dataset, docker config) pair runs as a separate worker.
+
 ## Running Benchmarks on AWS
 
 ### Prerequisites
@@ -100,8 +132,8 @@ aws sso login --profile vectordb
 
 1. Go to EC2 Console > Launch Templates
 2. Select template:
-   - `vectordb-benchmark-full` for competitive benchmark
-   - `vectordb-benchmark-kdbai-tuning` for KDB.AI tuning
+   - **`vectordb-benchmark-full`** for competitive benchmark (all databases)
+   - **`vectordb-benchmark-kdbai-tuning`** for KDB.AI tuning (parameter sweep)
 3. Click "Launch instance from template"
 4. Optionally edit tags:
    - `Databases`: comma-separated list (remove entries to run subset)
@@ -112,21 +144,17 @@ aws sso login --profile vectordb
 ### Option 2: CLI
 
 ```bash
-# Full competitive run
-python aws/orchestrator.py
+# --- Competitive ---
+python aws/orchestrator.py                                          # Full run (all DBs, all datasets)
+python aws/orchestrator.py --databases qdrant,kdbai --datasets sift,gist  # Subset
 
-# Specific databases/datasets
-python aws/orchestrator.py --databases qdrant,kdbai --datasets sift,gist
-
-# KDB.AI tuning
+# --- KDB.AI Tuning ---
 python aws/orchestrator.py --databases kdbai --datasets sift,glove-100,gist \
     --benchmark-type kdbai-tuning
 
-# Pull fresh Docker images
-python aws/orchestrator.py --databases kdbai --pull-latest kdbai
-
-# Fire and forget (don't wait for completion)
-python aws/orchestrator.py --no-wait
+# --- Common options ---
+python aws/orchestrator.py --databases kdbai --pull-latest kdbai    # Pull fresh Docker images
+python aws/orchestrator.py --no-wait                                # Fire and forget
 ```
 
 ### Monitoring a Run

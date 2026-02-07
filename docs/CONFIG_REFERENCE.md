@@ -1,8 +1,14 @@
 # Configuration Reference
 
+Configuration is split across two layers:
+
+1. **Competitive benchmarks** use `benchmark.yaml` (global settings) + `configs/<db>.yaml` (per-database). HNSW parameters are fixed — all databases use the same M/efConstruction for fair comparison.
+
+2. **KDB.AI tuning benchmarks** additionally use `configs/tuning/kdbai-tuning.yaml`, which defines the HNSW parameter sweep (multiple M/efConstruction combinations) and Docker threading configs to test.
+
 ## Global Benchmark Config (`benchmark.yaml`)
 
-Controls datasets, index parameters, search settings, and exclusions shared across all databases.
+Controls datasets, index parameters, search settings, and exclusions shared across all databases. Used by both benchmark types.
 
 ### Datasets
 

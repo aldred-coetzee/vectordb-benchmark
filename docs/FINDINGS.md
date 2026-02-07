@@ -1,8 +1,12 @@
 # Findings
 
-Results from competitive run 2026-02-07-0010 (8 databases x 4 datasets) and KDB.AI tuning run 2026-02-07-0915 (45 configurations x 3 datasets).
-
 All benchmarks ran on AWS m5.4xlarge (16 vCPU, 64 GB), Docker containers with 16 CPUs / 64 GB.
+
+This document covers results from two separate benchmark flows:
+
+1. **Competitive benchmark** (run 2026-02-07-0010): 8 databases compared head-to-head on fixed HNSW parameters (M=16, efC=64) across 4 datasets. Answers: "How does KDB.AI compare to competitors?"
+
+2. **KDB.AI tuning benchmark** (run 2026-02-07-0915): 45 KDB.AI configurations (5 HNSW param sets x 3 docker threading configs x 3 datasets). Answers: "What KDB.AI HNSW parameters maximize recall and throughput?"
 
 ## Competitive Results (M=16, efC=64)
 

@@ -44,9 +44,19 @@ All queries sent in a single API call. Measures throughput under batch workloads
 
 All benchmarks run on identical AWS `m5.4xlarge` instances (16 vCPU, 64 GB RAM). Each database gets its own isolated instance — no resource contention between databases. Docker containers are configured with 16 CPUs and 64 GB memory.
 
-### Benchmark Sequence
+### Two Benchmark Flows
 
-For each database × dataset combination:
+There are two separate benchmark flows with different purposes:
+
+1. **Competitive** (`run_full_benchmark()`): Compares all databases on fixed HNSW parameters (M=16, efC=64). Tests both FLAT and HNSW indexes, includes batch search. One job per (database, dataset) pair.
+
+2. **KDB.AI Tuning** (`run_tuning_benchmark()`): Sweeps HNSW build parameters (M, efConstruction) and Docker threading configs for KDB.AI only. HNSW only — no FLAT, no batch search. One job per (dataset, HNSW config, docker config) triple.
+
+Both flows share `run_search_benchmark()` for the actual query measurement. The key difference is what varies: competitive holds HNSW params constant and varies the database; tuning holds the database constant and varies HNSW params.
+
+### Competitive Benchmark Sequence
+
+For each database × dataset combination (`runner.py:run_full_benchmark()`, ~line 390):
 
 ```
 1. Start Docker container, wait for health check
@@ -65,6 +75,25 @@ For each database × dataset combination:
    e. Batch search for each efSearch (if supported)
 4. Drop tables, stop container
 ```
+
+### Tuning Benchmark Sequence
+
+For each (HNSW config, docker config) pair on a single dataset (`runner.py:run_tuning_benchmark()`, ~line 562):
+
+```
+1. Start Docker container with docker config (NUM_WRK, THREADS)
+2. For each HNSW config (M, efConstruction):
+   a. Create table with HNSW index using this M/efConstruction
+   b. Insert all vectors → measure ingest throughput
+   c. Cache warming: 1,000 untimed queries
+   d. For each efSearch in [128, 256, 512]:
+      - For each indexOnly in [false, true]:
+        - Per-ef warmup → timed queries → QPS, latency, recall
+   e. Drop table
+3. Stop container
+```
+
+The tuning flow also tests `indexOnly` (a KDB.AI search option that skips post-filtering) at each efSearch point, doubling the search configurations measured.
 
 ### Warmup Strategy
 

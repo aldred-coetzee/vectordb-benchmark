@@ -39,6 +39,32 @@ results/                  Output (.db, .html, .csv)
 data/                     Datasets (symlinked to /data on AWS)
 ```
 
+## Two Benchmark Types
+
+The tool supports two distinct benchmark flows, each with its own purpose, job matrix, and report format:
+
+### Competitive Benchmark
+
+Compares all databases against each other on the same HNSW parameters (M=16, efConstruction=64). Used to rank databases on recall, QPS, latency, and ingest speed.
+
+- **Scope**: 7+ databases x 4 datasets = 28+ jobs
+- **Parameters**: Fixed M and efConstruction (from `benchmark.yaml`), sweep efSearch
+- **Runner method**: `run_full_benchmark()` — tests both FLAT and HNSW indexes, includes batch search
+- **Report**: `ComparisonReportGenerator` — cross-database tables, per-dataset breakdowns
+- **AWS template**: `vectordb-benchmark-full`
+
+### KDB.AI Tuning Benchmark
+
+Sweeps HNSW build parameters (M, efConstruction) and Docker threading configs (NUM_WRK, THREADS) for KDB.AI only. Used to find optimal configuration for competitive runs.
+
+- **Scope**: 1 database x 3 datasets x 5 HNSW configs x 3 docker configs = 45 jobs
+- **Parameters**: Multiple M/efConstruction combinations (from `configs/tuning/kdbai-tuning.yaml`)
+- **Runner method**: `run_tuning_benchmark()` — HNSW only, no FLAT, no batch search
+- **Report**: `generate_tuning_report.py` — parameter impact tables, config rankings
+- **AWS template**: `vectordb-benchmark-kdbai-tuning`
+
+Both flows share the same core infrastructure: `run_benchmark.py` entry point, `BenchmarkRunner`, database clients, Docker management, and SQLite storage. The `--benchmark-type` flag and `--tuning-config` argument control which flow executes.
+
 ## Data Flow
 
 ### 1. Entry Point (`run_benchmark.py`)
