@@ -713,30 +713,27 @@ def main():
                     "docker_num_wrk": job["docker_num_wrk"],
                 })
     else:
-        job_idx = 0
-        for db in databases:
-            for ds in datasets:
-                job_name = job_names[job_idx]
-                job_idx += 1
-                instance_id, error = launch_worker(
-                    ec2_client,
-                    db,
-                    ds,
-                    run_id,
-                    benchmark_type=benchmark_type,
-                    pull_latest=args.pull_latest,
-                    dry_run=args.dry_run,
-                )
-                if instance_id:
-                    launched[job_name] = instance_id
-                elif error:  # Not a dry run
-                    failed[job_name] = (error, {
-                        "database": db,
-                        "dataset": ds,
-                        "run_id": run_id,
-                        "benchmark_type": benchmark_type,
-                        "pull_latest": args.pull_latest,
-                    })
+        for db, ds in active_combos:
+            job_name = f"{db}-{ds}"
+            instance_id, error = launch_worker(
+                ec2_client,
+                db,
+                ds,
+                run_id,
+                benchmark_type=benchmark_type,
+                pull_latest=args.pull_latest,
+                dry_run=args.dry_run,
+            )
+            if instance_id:
+                launched[job_name] = instance_id
+            elif error:  # Not a dry run
+                failed[job_name] = (error, {
+                    "database": db,
+                    "dataset": ds,
+                    "run_id": run_id,
+                    "benchmark_type": benchmark_type,
+                    "pull_latest": args.pull_latest,
+                })
 
     if args.dry_run:
         print("\n[DRY RUN] No instances launched.")

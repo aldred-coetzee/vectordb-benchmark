@@ -129,18 +129,15 @@ class KDBAIClient(BaseVectorDBClient):
         # flat/hnsw: native in-memory indexes, single-threaded insert
         if index_config.index_type == "flat":
             flat_type = "qFlat" if self._use_q_indexes else "flat"
-            flat_params = {
-                "dims": dimension,
-                "metric": kdbai_metric,
-            }
-            if self._use_q_indexes:
-                flat_params["mmapLevel"] = 1 if dimension > 960 else 0
             indexes = [
                 {
                     "name": index_config.name,
                     "type": flat_type,
                     "column": "vectors",
-                    "params": flat_params,
+                    "params": {
+                        "dims": dimension,
+                        "metric": kdbai_metric,
+                    },
                 }
             ]
         elif index_config.index_type == "hnsw":
