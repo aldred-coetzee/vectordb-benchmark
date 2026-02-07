@@ -84,14 +84,19 @@ Key function: `get_client()` (~line 770) maps database names to client classes. 
 
 **`run_full_benchmark()`** (~line 390):
 ```
-For each index type [flat, hnsw]:
-  1. run_ingest_benchmark() → create table, insert vectors, measure throughput
-  2. _warm_cache() → 1000 untimed queries (pre-sweep, once before ef loop)
-  3. For each efSearch value [128, 256, 512]:
-     - run_search_benchmark() → timed queries, collect latencies + IDs
-  4. For each efSearch (if has_batch_search):
-     - run_batch_search_benchmark() → all queries in one API call
-  5. drop_table()
+1. FLAT index:
+   a. run_ingest_benchmark() → create table, insert vectors, measure throughput
+   b. run_search_benchmark() → timed queries (no efSearch sweep, single config)
+   c. run_batch_search_benchmark() (if supported)
+   d. drop_table()
+2. HNSW index:
+   a. run_ingest_benchmark() → create table with HNSW params
+   b. _warm_cache() → 1000 untimed queries (pre-sweep, once before ef loop)
+   c. For each efSearch value [128, 256, 512]:
+      - run_search_benchmark() → timed queries, collect latencies + IDs
+   d. For each efSearch (if has_batch_search):
+      - run_batch_search_benchmark() → all queries in one API call
+   e. drop_table()
 ```
 
 **`run_tuning_benchmark()`** (~line 562):

@@ -109,7 +109,7 @@ At default competitive settings (M=16, efC=64), KDB.AI trails Qdrant on recall a
 
 | Dataset | KDB.AI (M48,efC200) | Qdrant (M16,efC64) | Gap |
 |---------|--------------------|--------------------|-----|
-| SIFT | 0.999 | 0.999 | 0.000 |
+| SIFT | 0.999 | 0.998 | +0.001 |
 | GIST | 0.983 | 0.966 | +0.017 |
 | GloVe-100 | 0.935 | 0.943 | -0.008 |
 

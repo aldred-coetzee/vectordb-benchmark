@@ -84,7 +84,7 @@ For each database × dataset combination (`runner.py:run_full_benchmark()`, ~lin
 
 ### Tuning Benchmark Sequence
 
-For each (HNSW config, docker config) pair on a single dataset (`runner.py:run_tuning_benchmark()`, ~line 562):
+For each HNSW config on a single dataset and docker config (`runner.py:run_tuning_benchmark()`, ~line 562). On AWS, each (dataset, HNSW config, docker config) triple runs as a separate worker — `_filter_tuning_config()` filters the YAML to a single HNSW config per worker. Locally, all HNSW configs run sequentially within one container:
 
 ```
 1. Start Docker container with docker config (NUM_WRK, THREADS)

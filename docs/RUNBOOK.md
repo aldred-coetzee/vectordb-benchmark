@@ -46,7 +46,7 @@ This tool supports two separate benchmark flows. Choose the right one for your g
 | | Competitive | KDB.AI Tuning |
 |---|---|---|
 | **Purpose** | Compare databases head-to-head | Find optimal KDB.AI HNSW parameters |
-| **Databases** | All 7+ databases | KDB.AI only |
+| **Databases** | All 8 active databases | KDB.AI only |
 | **HNSW params** | Fixed (M=16, efC=64) | Swept (5 combinations of M/efC) |
 | **Docker config** | Single config per DB | Swept (3 threading configs) |
 | **Index types** | FLAT + HNSW + batch | HNSW only |
