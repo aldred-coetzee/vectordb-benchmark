@@ -53,11 +53,13 @@ indexes:
 
 ```yaml
 search:
-  k: 10                               # Number of nearest neighbors
+  k: 10                               # Number of nearest neighbors to return
   num_queries: 10000                   # Max queries to run
   warmup: 100                          # Minimum warmup queries (scaled up automatically)
   batch_size: 50000                    # Max queries per batch search call
 ```
+
+Recall is computed at both k=10 and k=100 (`k_values` defaults to `[10, 100]` in the runner). The `k` config controls how many neighbors each query returns; recall is always evaluated at both thresholds.
 
 ### Exclusions and Caveats
 

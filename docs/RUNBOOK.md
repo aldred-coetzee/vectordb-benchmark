@@ -76,9 +76,9 @@ python run_benchmark.py --config configs/qdrant.yaml --no-docker
 ### All Databases
 
 ```bash
-python run_all.py                                    # All DBs, SIFT
-python run_all.py --databases qdrant,milvus,kdbai    # Subset
-python run_all.py --dataset gist                     # Different dataset
+python run_all.py --configs all                      # All DBs, default dataset
+python run_all.py --configs configs/qdrant.yaml,configs/milvus.yaml,configs/kdbai.yaml  # Subset
+python run_all.py --configs all --dataset gist       # Different dataset
 ```
 
 ### KDB.AI with License

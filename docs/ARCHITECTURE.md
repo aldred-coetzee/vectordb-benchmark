@@ -76,7 +76,7 @@ CLI args → load config YAML → get_client(database_name) → create Benchmark
          → BenchmarkDatabase.save() → DockerManager.stop_container()
 ```
 
-Key function: `get_client()` (~line 770) maps database names to client classes. Each client is instantiated with database-specific parameters.
+Key function: `get_client()` (~line 70) maps database names to client classes. Each client is instantiated with database-specific parameters.
 
 ### 2. Runner (`benchmark/runner.py`)
 
@@ -88,7 +88,6 @@ Key function: `get_client()` (~line 770) maps database names to client classes. 
    a. run_ingest_benchmark() → create table, insert vectors, measure throughput
    b. run_search_benchmark() → timed queries (no efSearch sweep, single config)
    c. run_batch_search_benchmark() (if supported)
-   d. drop_table()
 2. HNSW index:
    a. run_ingest_benchmark() → create table with HNSW params
    b. _warm_cache() → 1000 untimed queries (pre-sweep, once before ef loop)
@@ -96,7 +95,7 @@ Key function: `get_client()` (~line 770) maps database names to client classes. 
       - run_search_benchmark() → timed queries, collect latencies + IDs
    d. For each efSearch (if has_batch_search):
       - run_batch_search_benchmark() → all queries in one API call
-   e. drop_table()
+3. Drop all tables, stop container
 ```
 
 **`run_tuning_benchmark()`** (~line 562):

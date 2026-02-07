@@ -6,7 +6,7 @@
 
 Wall-clock time to insert all vectors into a table with index. For HNSW, each insert updates the graph, so throughput decreases as the dataset grows. Measured end-to-end including batch serialization overhead.
 
-**Implementation**: `runner.py:run_ingest_benchmark()` (~line 95). Vectors inserted in batches sized per-client based on dimension and protocol overhead.
+**Implementation**: `runner.py:run_ingest_benchmark()` (~line 61). Vectors inserted in batches sized per-client based on dimension and protocol overhead.
 
 ### Queries Per Second (QPS)
 
@@ -36,7 +36,7 @@ Recall@10 = |returned ∩ true_top_10| / 10
 
 All queries sent in a single API call. Measures throughput under batch workloads. Available for 5/9 databases: FAISS, Qdrant, Milvus, ChromaDB, KDB.AI. Per-query latency percentiles are not available for batch (queries processed together).
 
-**Implementation**: `runner.py:run_batch_search_benchmark()` (~line 310). Single timer wraps one `client.batch_search()` call.
+**Implementation**: `runner.py:run_batch_search_benchmark()` (~line 294). Single timer wraps one `client.batch_search()` call.
 
 ## How We Measure
 

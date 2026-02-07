@@ -36,7 +36,7 @@ This document covers results from two separate benchmark flows:
 | 6 | Redis | 2,805 |
 | 7 | Weaviate | 2,010 |
 
-**Note**: Chroma recall is frozen due to an efSearch bug (see [METHODOLOGY.md](METHODOLOGY.md#chromadb-efsearch-freeze)). Actual ef=256 recall would be higher. Milvus averages are over 2 datasets only (excluded from GIST and DBpedia-OpenAI).
+**Note**: KDB.AI (FAISS) excluded from summary rankings (3/4 datasets, discussed separately in section 4). Chroma recall is frozen due to an efSearch bug (see [METHODOLOGY.md](METHODOLOGY.md#chromadb-efsearch-freeze)). Actual ef=256 recall would be higher. Milvus averages are over 2 datasets only (excluded from GIST and DBpedia-OpenAI).
 
 ### Per-Dataset Recall@10 (HNSW ef=256)
 
