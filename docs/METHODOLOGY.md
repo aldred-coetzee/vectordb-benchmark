@@ -46,7 +46,7 @@ All benchmarks run on identical AWS `m5.4xlarge` instances (16 vCPU, 64 GB RAM).
 
 **Isolation model**: Each benchmark job runs on a dedicated EC2 instance. The database container and benchmark process are the only workloads on the machine — no resource contention between databases or between jobs. This ensures one database's memory pressure, CPU usage, or background tasks cannot affect another's measurements.
 
-**Parallelization**: All jobs launch simultaneously (subject to account vCPU limits). For competitive runs, this means up to 28 instances running in parallel (7 databases x 4 datasets). For tuning runs, up to 9 instances (3 datasets x 3 docker configs). Workers are fully independent — no cross-worker communication. The orchestrator monitors progress by polling S3 status files.
+**Parallelization**: All jobs launch simultaneously (subject to account vCPU limits). For competitive runs, this means 28 instances in parallel (7 databases x 4 datasets). For tuning runs, 45 instances (3 datasets x 5 HNSW configs x 3 docker configs). Workers are fully independent — no cross-worker communication. A lightweight orchestrator instance (t3.small) launches all workers, monitors progress by polling S3 status files, and merges results when complete.
 
 **Local runs** do not have this isolation. `run_all.py` runs databases sequentially on the same machine, so system state (OS page cache, memory fragmentation) may carry across databases. For comparable measurements, use AWS or restart between databases.
 

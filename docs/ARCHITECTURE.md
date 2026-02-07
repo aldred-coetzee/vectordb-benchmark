@@ -191,12 +191,15 @@ Orchestrator (t3.small)              Workers (m5.4xlarge × N)
          └──────── S3 Bucket ─────────────────┘
 ```
 
-**Job model**: Each job gets a dedicated EC2 instance (m5.4xlarge, 16 vCPU, 64 GB). The benchmark process and database container run on the same instance with no other workloads — full hardware isolation between jobs. All jobs launch in parallel (subject to account vCPU limits).
+**Job model**: Each job gets a dedicated EC2 instance (m5.4xlarge, 16 vCPU, 64 GB). The benchmark process and database container run on the same instance with no other workloads — full hardware isolation between jobs. All jobs launch in parallel (subject to account vCPU limits). Workers are independent — no cross-worker communication. The orchestrator coordinates via S3 status files only.
 
 - **Competitive**: One job per (database, dataset) pair. 7 databases x 4 datasets = 28 parallel workers.
-- **KDB.AI Tuning**: One job per (dataset, docker config) pair. Each worker sweeps all HNSW configs (M/efConstruction) sequentially. 3 datasets x 3 docker configs = 9 parallel workers (each runs 5 HNSW configs).
+- **KDB.AI Tuning**: One job per (dataset, HNSW config, docker config) triple. 3 datasets x 5 HNSW configs x 3 docker configs = 45 parallel workers.
 
-Workers are independent — no cross-worker communication. The orchestrator coordinates via S3 status files only.
+**Orchestrator**: A lightweight t3.small instance runs `orchestrator.py`. It launches all workers, polls S3 for completion, re-launches failures within 30 minutes, then merges per-job SQLite databases into a single report. Each benchmark type has its own AWS launch template:
+
+- `vectordb-benchmark-full` — launches the orchestrator for competitive runs
+- `vectordb-benchmark-kdbai-tuning` — launches the orchestrator for tuning runs
 
 **Orchestrator flow** (`aws/orchestrator.py`):
 1. Parse tags from EC2 instance metadata (Databases, Datasets, PullLatest)
